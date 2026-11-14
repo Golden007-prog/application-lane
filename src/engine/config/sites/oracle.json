@@ -1,0 +1,733 @@
+{
+  "ats": "Oracle Cloud",
+  "urls": [
+    "*://*.oraclecloud.com/hcmUI/CandidateExperience/*"
+  ],
+  "urlsExcluded": [],
+  "embeddedPaths": [],
+  "pathsExcluded": [],
+  "containerPath": [
+    "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]"
+  ],
+  "containerRequired": false,
+  "defaultMethod": "default",
+  "submitButtonPaths": [
+    "//button[contains(@class,'apply-flow-pagination__submit-button')]"
+  ],
+  "submittedSuccessPaths": [],
+  "trackedInputSelectors": [],
+  "inputSelectors": [
+    [
+      "first_name",
+      [
+        ".//input[@name='firstName']"
+      ]
+    ],
+    [
+      "middle_name",
+      [
+        ".//input[@name='middleNames']"
+      ]
+    ],
+    [
+      "last_name",
+      [
+        ".//input[@name='lastName']"
+      ]
+    ],
+    [
+      "full_name",
+      [
+        ".//div[contains(@class,'input-row')][.//label[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'full name')]]//input"
+      ]
+    ],
+    [
+      "email",
+      [
+        ".//input[@name='email'][@type='email']"
+      ]
+    ],
+    [
+      "phone",
+      [
+        ".//input[@type='tel']"
+      ]
+    ],
+    [
+      "country",
+      [
+        {
+          "path": ".//input[@name='country'][@role='combobox']",
+          "actions": [
+            {
+              "method": "click"
+            },
+            {
+              "path": [
+                "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+              ],
+              "method": "click",
+              "time": 3000
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      "address",
+      [
+        ".//input[@name='addressLine1'][not(@role='combobox')]"
+      ]
+    ],
+    [
+      "address_line_2",
+      [
+        ".//input[@name='addressLine2']"
+      ]
+    ],
+    [
+      "city",
+      [
+        ".//input[@name='city'][not(@role='combobox')]"
+      ]
+    ],
+    [
+      "state",
+      [
+        {
+          "path": ".//input[@name='region2'][@role='combobox']",
+          "actions": [
+            {
+              "method": "click"
+            },
+            {
+              "path": [
+                "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+              ],
+              "method": "click",
+              "time": 3000
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      "postal_code",
+      [
+        ".//input[@name='postalCode'][not(@role='combobox')]"
+      ]
+    ],
+    [
+      "education",
+      [
+        {
+          "addButtonPath": [
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//button[contains(@class,'new-tile') or starts-with(@id,'profileItemsAddButton')][normalize-space(.)='Add Education']",
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'work-and-education-timeline__actions-container')][not(contains(@class,'--disabled'))]//button[contains(@class,'timeline-education-add-button')]"
+          ],
+          "containerPath": [
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][starts-with(normalize-space(@aria-label),'Education') or .//button[normalize-space(.)='Add Education'] or .//input[starts-with(@name,'educationalEstablishment')]]//div[contains(@class,'profile-item-content')]",
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'standard-apply-flow-timeline-form')][.//input[starts-with(@name,'educationalEstablishment') or @name='contentItemId' or @name='major']][not(.//input[@name='employerName'])]"
+          ],
+          "confirmAddedPath": [
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][starts-with(normalize-space(@aria-label),'Education') or .//button[normalize-space(.)='Add Education'] or .//input[starts-with(@name,'educationalEstablishment')]]//div[contains(@class,'profile-item-content')]",
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'standard-apply-flow-timeline-form')][.//input[starts-with(@name,'educationalEstablishment') or @name='contentItemId' or @name='major']][not(.//input[@name='employerName'])]"
+          ],
+          "savedRowPath": ["//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][starts-with(normalize-space(@aria-label),'Education') or .//button[normalize-space(.)='Add Education'] or .//input[starts-with(@name,'educationalEstablishment')]]//*[contains(@class,'apply-flow-profile-item-tile__summary')]", "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//*[@data-profile-item-tile='true'][contains(@class,'beautiful-timeline-item--education')]"],
+          "allowReuse": true,
+          "time": 5000,
+          "inputSelectors": [
+            [
+              "degree",
+              [
+                {
+                  "path": ".//input[@name='contentItemId']",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                },
+                {
+                  "path": ".//ul[@role='radiogroup'][contains(@class,'cx-select-pills-container')][contains(@aria-label,'Degree')]//button[@role='radio']",
+                  "method": "click"
+                }
+              ]
+            ],
+            [
+              "major",
+              [
+                ".//input[@name='major']"
+              ]
+            ],
+            [
+              "school",
+              [
+                {
+                  "path": ".//input[starts-with(@name,'educationalEstablishment')]",
+                  "actions": [
+                    {
+                      "method": "trustedType"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')]"
+                      ],
+                      "rankedPick": true,
+                      "method": "click",
+                      "time": 6000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "start_month_text",
+              [
+                {
+                  "path": ".//input[starts-with(@id,'month-startDate') or contains(@aria-label,'Start Date Month')]",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "start_year",
+              [
+                {
+                  "path": ".//input[starts-with(@id,'year-startDate') or contains(@aria-label,'Start Date Year')]",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "end_month_text",
+              [
+                {
+                  "path": ".//input[starts-with(@id,'month-endDate') or contains(@aria-label,'End Date Month')]",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "end_year",
+              [
+                {
+                  "path": ".//input[starts-with(@id,'year-endDate') or contains(@aria-label,'End Date Year')]",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "graduated",
+              [
+                {
+                  "valueKey": "graduated_flag",
+                  "method": "click",
+                  "valuePathMap": {
+                    "Yes": ".//label[contains(@class,'apply-flow-input-checkbox')][contains(normalize-space(.),'Graduated')]//*[contains(@class,'apply-flow-input-checkbox__button')][not(contains(@class,'--checked'))]",
+                    "No": ".//label[contains(@class,'apply-flow-input-checkbox')][contains(normalize-space(.),'Graduated')]//*[contains(@class,'apply-flow-input-checkbox__button--checked')]"
+                  }
+                }
+              ]
+            ],
+            [
+              "save",
+              [
+                {
+                  "path": [
+                    "./self::*[not(.//ul[@role='radiogroup'][contains(@class,'cx-select-pills-container')][not(.//button[@aria-checked='true'])])]//*[contains(@class,'app-dialog__footer') or contains(@class,'profile-item-footer') or contains(@class,'timeline-form-footer')]//button[contains(@class,'save-btn') or contains(@class,'app-dialog__footer-button')][not(contains(@class,'cancel-btn'))]",
+                    "./following-sibling::*[contains(@class,'profile-item-footer')]//button[contains(@class,'save-btn')]"
+                  ],
+                  "valueRequired": false,
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": ".",
+                      "removed": true,
+                      "time": 5000,
+                      "allowFailure": true
+                    }
+                  ]
+                }
+              ]
+            ]
+          ]
+        }
+      ]
+    ],
+    [
+      "experience",
+      [
+        {
+          "addButtonPath": [
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//button[contains(@class,'new-tile') or starts-with(@id,'profileItemsAddButton')][normalize-space(.)='Add Experience']",
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'work-and-education-timeline__actions-container')][not(contains(@class,'--disabled'))]//button[contains(@class,'timeline-work-add-button')]"
+          ],
+          "containerPath": [
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][contains(normalize-space(@aria-label),'Experience') or .//button[normalize-space(.)='Add Experience']][not(.//button[normalize-space(.)='Add Language'])]//div[contains(@class,'profile-item-content')]",
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'standard-apply-flow-timeline-form')][.//input[@name='employerName' or @name='jobTitle']]"
+          ],
+          "confirmAddedPath": [
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][contains(normalize-space(@aria-label),'Experience') or .//button[normalize-space(.)='Add Experience']][not(.//button[normalize-space(.)='Add Language'])]//div[contains(@class,'profile-item-content')]",
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'standard-apply-flow-timeline-form')][.//input[@name='employerName' or @name='jobTitle']]"
+          ],
+          "savedRowPath": ["//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][contains(normalize-space(@aria-label),'Experience') or .//button[normalize-space(.)='Add Experience']][not(.//button[normalize-space(.)='Add Language'])]//*[contains(@class,'apply-flow-profile-item-tile__summary')]", "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//*[@data-profile-item-tile='true'][contains(@class,'beautiful-timeline-item--experiences')]"],
+          "allowReuse": true,
+          "time": 5000,
+          "inputSelectors": [
+            [
+              "company",
+              [
+                ".//input[@name='employerName']"
+              ]
+            ],
+            [
+              "title",
+              [
+                ".//input[@name='jobTitle']"
+              ]
+            ],
+            [
+              "country",
+              [
+                {
+                  "path": ".//input[@name='countryCode'][@role='combobox']",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "start_month_text",
+              [
+                {
+                  "path": ".//input[starts-with(@id,'month-startDate') or contains(@aria-label,'Start Date Month')]",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "start_year",
+              [
+                {
+                  "path": ".//input[starts-with(@id,'year-startDate') or contains(@aria-label,'Start Date Year')]",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "end_month_text",
+              [
+                {
+                  "path": ".//input[starts-with(@id,'month-endDate') or contains(@aria-label,'End Date Month')]",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "end_year",
+              [
+                {
+                  "path": ".//input[starts-with(@id,'year-endDate') or contains(@aria-label,'End Date Year')]",
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "currently_working",
+              [
+                ".//input[@type='checkbox'][contains(@id,'currentJobFlag')]"
+              ]
+            ],
+            [
+              "description",
+              [
+                ".//textarea[contains(@name,'esponsibilit')]"
+              ]
+            ],
+            [
+              "save",
+              [
+                {
+                  "path": [
+                    ".//*[contains(@class,'app-dialog__footer') or contains(@class,'profile-item-footer') or contains(@class,'timeline-form-footer')]//button[contains(@class,'save-btn') or contains(@class,'app-dialog__footer-button')][not(contains(@class,'cancel-btn'))]",
+                    "./following-sibling::*[contains(@class,'profile-item-footer')]//button[contains(@class,'save-btn')]"
+                  ],
+                  "valueRequired": false,
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": ".",
+                      "removed": true,
+                      "time": 5000,
+                      "allowFailure": true
+                    }
+                  ]
+                }
+              ]
+            ]
+          ]
+        }
+      ]
+    ],
+    [
+      "websites",
+      [
+        {
+          "array": true,
+          "addButtonPath": "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'candidate-links')]//button[contains(@class,'candidate-links__add-link')]",
+          "containerPath": "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'candidate-links__link')]",
+          "confirmAddedPath": [
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[contains(@class,'candidate-links__link')]"
+          ],
+          "time": 5000,
+          "inputSelectors": [
+            [
+              "url",
+              [
+                ".//input[@type='url']"
+              ]
+            ]
+          ]
+        }
+      ]
+    ],
+    [
+      "language",
+      [
+        {
+          "array": true,
+          "addButtonPath": "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//button[contains(@class,'new-tile') or starts-with(@id,'profileItemsAddButton')][normalize-space(.)='Add Language']",
+          "containerPath": "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][starts-with(normalize-space(@aria-label),'Language')]//div[contains(@class,'profile-item-content')]",
+          "confirmAddedPath": [
+            "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][starts-with(normalize-space(@aria-label),'Language')]//div[contains(@class,'profile-item-content')]"
+          ],
+          "savedRowPath": "//div[contains(@class,'apply-flow-section')][not(contains(translate(@style,' ',''),'display:none'))]//div[@role='region'][starts-with(normalize-space(@aria-label),'Language')]//*[contains(@class,'apply-flow-profile-item-tile__summary')]",
+          "time": 5000,
+          "inputSelectors": [
+            [
+              "language",
+              [
+                {
+                  "path": ".//input[@role='combobox']",
+                  "actions": [
+                    {
+                      "method": "trustedType"
+                    },
+                    {
+                      "path": [
+                        "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                        "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+                      ],
+                      "method": "click",
+                      "time": 3000
+                    }
+                  ]
+                }
+              ]
+            ],
+            [
+              "reading",
+              [
+                {
+                  "path": ".//ul[@role='radiogroup'][@aria-label='Reading']//button[@role='radio'][normalize-space(.)='%VALUE%']",
+                  "method": "click"
+                }
+              ]
+            ],
+            [
+              "writing",
+              [
+                {
+                  "path": ".//ul[@role='radiogroup'][@aria-label='Writing']//button[@role='radio'][normalize-space(.)='%VALUE%']",
+                  "method": "click"
+                }
+              ]
+            ],
+            [
+              "speaking",
+              [
+                {
+                  "path": ".//ul[@role='radiogroup'][@aria-label='Speaking']//button[@role='radio'][normalize-space(.)='%VALUE%']",
+                  "method": "click"
+                }
+              ]
+            ],
+            [
+              "save",
+              [
+                {
+                  "path": [
+                    ".//*[contains(@class,'app-dialog__footer') or contains(@class,'profile-item-footer')]//button[contains(@class,'save-btn') or contains(@class,'app-dialog__footer-button')][not(contains(@class,'cancel-btn'))]",
+                    "./following-sibling::*[contains(@class,'profile-item-footer')]//button[contains(@class,'save-btn')]"
+                  ],
+                  "valueRequired": false,
+                  "actions": [
+                    {
+                      "method": "click"
+                    },
+                    {
+                      "path": ".",
+                      "removed": true,
+                      "time": 5000,
+                      "allowFailure": true
+                    }
+                  ]
+                }
+              ]
+            ]
+          ]
+        }
+      ]
+    ],
+    [
+      "gender",
+      [
+        {
+          "path": ".//div[contains(@class,'input-row')][.//label[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'gender') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'sex')]]//input[@role='combobox']",
+          "actions": [
+            {
+              "method": "click"
+            },
+            {
+              "path": [
+                "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+              ],
+              "method": "click",
+              "time": 3000
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      "ethnicity",
+      [
+        {
+          "path": ".//div[contains(@class,'input-row')][.//label[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'race') or contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'ethnic')]]//input[@role='combobox']",
+          "actions": [
+            {
+              "method": "click"
+            },
+            {
+              "path": [
+                "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+              ],
+              "method": "click",
+              "time": 3000
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      "veteran",
+      [
+        {
+          "path": ".//div[contains(@class,'input-row')][.//label[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'veteran')]]//input[@role='combobox']",
+          "actions": [
+            {
+              "method": "click"
+            },
+            {
+              "path": [
+                "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+              ],
+              "method": "click",
+              "time": 3000
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      "disability",
+      [
+        {
+          "path": ".//div[contains(@class,'input-row')][.//label[contains(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),'disabilit')]]//input[@role='combobox']",
+          "actions": [
+            {
+              "method": "click"
+            },
+            {
+              "path": [
+                "//*[@role='gridcell' and contains(@class,'cx-select__list-item')][normalize-space(.)='%VALUE%']",
+                "//*[contains(@class,'cx-select__list')]//*[@role='row' or @role='gridcell'][normalize-space(.)='%VALUE%']"
+              ],
+              "method": "click",
+              "time": 3000
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      "resume",
+      [
+        {
+          "path": [
+            "//resume-upload-button"
+          ],
+          "actions": [
+            {
+              "path": "%INPUTPATH%//button[contains(@class,'attachment-upload-button__bottom-button')]",
+              "method": "click",
+              "allowFailure": true
+            },
+            {
+              "path": "%INPUTPATH%//input[@type='file']",
+              "method": "uploadResume",
+              "time": 5000
+            }
+          ]
+        }
+      ]
+    ],
+    [
+      "coverLetter",
+      [
+        {
+          "path": [
+            "//cover-letter-upload-button"
+          ],
+          "actions": [
+            {
+              "path": "%INPUTPATH%//button[contains(@class,'attachment-upload-button__bottom-button')]",
+              "method": "click",
+              "allowFailure": true
+            },
+            {
+              "path": "%INPUTPATH%//input[@type='file']",
+              "method": "uploadCoverLetter",
+              "time": 5000
+            }
+          ]
+        }
+      ]
+    ]
+  ]
+}

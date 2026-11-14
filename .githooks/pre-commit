@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuses a commit that would record the applicant's own details (scripts/leak-check.mjs).
+exec node "$(git rev-parse --show-toplevel)/scripts/leak-check.mjs" --staged

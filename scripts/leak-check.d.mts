@@ -1,0 +1,9 @@
+export type LeakTerm = { term: string; kind: string; cased?: boolean; digits?: boolean; named?: boolean };
+export type Line = { where: string; line: string };
+export declare function dataDirectory(env?: Record<string, string | undefined>, cwd?: string, platform?: string, home?: string, checkout?: string): string;
+export declare function collectTerms(input?: { profile?: Record<string, any>; applications?: Array<Record<string, any>>; extra?: string[]; allow?: string[] }): LeakTerm[];
+export declare function findLeaks(lines: Line[], terms: LeakTerm[]): Array<{ where: string; kind: string; term: string }>;
+export declare function loadTerms(dir: string): LeakTerm[];
+export declare function addedLines(diff: string): Line[];
+export declare function listedFileLines(dir: string, files: string[]): Line[];
+export declare function leakHits(dir: string, files: string[], dataDir?: string): { terms: number; hits: Array<{ where: string; kind: string; term: string }> };
