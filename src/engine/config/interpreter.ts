@@ -481,6 +481,15 @@ const sleep = (ms: number, signal?: AbortSignal) =>
     signal?.addEventListener("abort", abort, { once: true });
   });
 
+// A virtual list scrolled by waitFor, until the browser's own scroll event
+// for it has come. That event draws the rows again: one employer's Workday
+// list drew "Computer Science" on the synthetic scroll, it was found, and the
+// browser's scroll replaced it before the click reached it, which then went
+// to a row no longer on the page.
+const scrolling = new WeakMap<Element, number>();
+const virtualGrids = '[data-automation-id="activeListContainer"].ReactVirtualized__Grid, .ReactVirtualized__List[role="listbox"]';
+const settleScrollMs = 300;
+
 async function waitFor(
   root: Document,
   candidates: string[],
@@ -496,12 +505,16 @@ async function waitFor(
   do {
     if (options.signal?.aborted)
       throw new DOMException("Aborted", "AbortError");
-    const element = candidates
+    const redrawing = !removed && [...root.querySelectorAll(virtualGrids)].some((grid) => {
+      const since = scrolling.get(grid);
+      return since !== undefined && (options.now || Date.now)() - since < settleScrollMs;
+    });
+    const element = redrawing ? undefined : candidates
       .flatMap((path) =>
         queryXPathAll(root, path, path.startsWith(".") ? context : undefined),
       )
       .find((element) => element.isConnected && accept(element));
-    if (removed ? !element : element)
+    if (!redrawing && (removed ? !element : element))
       return (
         element ||
         (context.nodeType === Node.DOCUMENT_NODE
@@ -523,9 +536,17 @@ async function waitFor(
       // in view: one employer's drew two of five, and "Computer Science", third,
       // was never on the page to pick. A screen at a time, back
       // to the top after the end, as the applicant would scroll it.
-      for (const grid of root.querySelectorAll<HTMLElement>('[data-automation-id="activeListContainer"].ReactVirtualized__Grid, .ReactVirtualized__List[role="listbox"]')) {
+      for (const grid of root.querySelectorAll<HTMLElement>(virtualGrids)) {
         if (grid.scrollHeight <= grid.clientHeight + 4) continue;
         const atEnd = grid.scrollTop + grid.clientHeight >= grid.scrollHeight - 4;
+        // Listened for before the scroll, after the site's own listener, so
+        // the rows are drawn again by the time it clears.
+        scrolling.set(grid, (options.now || Date.now)());
+        grid.addEventListener("scroll", function settled(event) {
+          if (!event.isTrusted) return;
+          scrolling.delete(grid);
+          grid.removeEventListener("scroll", settled);
+        });
         grid.scrollTop = atEnd ? 0 : grid.scrollTop + Math.max(32, grid.clientHeight - 32);
         grid.dispatchEvent(new Event("scroll"));
       }
