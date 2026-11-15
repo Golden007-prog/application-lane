@@ -137,7 +137,7 @@ The command line uses the same themes: `npm run lane -- status --theme velocity`
 
 **After updating.** Run `npm run build` again, restart the backend, and press the reload button for Application Lane in `chrome://extensions`. Your profile and settings are kept.
 
-**Something filled wrong.** Use **Report issue** in the side panel while the problem is visible. The report stays on your computer under **Issues** until you export or delete it. If you open a GitHub issue, please do not paste personal data.
+**Something filled wrong.** Use **Report issue** in the side panel while the problem is visible. The report stays on your computer under **Issues** until you export or delete it. To send it to the project, use **Share on GitHub** there: it replaces your details with made-up ones and shows you the result before anything leaves your computer. If you open a GitHub issue yourself, please do not paste personal data.
 
 ## More documentation
 

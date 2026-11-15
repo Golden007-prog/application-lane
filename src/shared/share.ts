@@ -5,7 +5,9 @@
 
 import type { IssueReport } from "./model";
 
-export const REPORT_REPOSITORY = "Nikman800/application-lane";
+export const REPORT_REPOSITORY_URL = "https://github.com/Nikman800/application-lane";
+// As the GitHub command line names it: owner/name.
+export const REPORT_REPOSITORY = new URL(REPORT_REPOSITORY_URL).pathname.slice(1);
 export const REPORT_TEMPLATE = "fill-report.yml";
 // The form's own label (.github/ISSUE_TEMPLATE/fill-report.yml).
 export const REPORT_LABEL = "fill report";
@@ -66,7 +68,7 @@ export function newIssueLink(shared: SharedReport, note = shared.report.note) {
       title: issueTitle(shared),
       summary,
     });
-    return `https://github.com/${REPORT_REPOSITORY}/issues/new?${params}`;
+    return `${REPORT_REPOSITORY_URL}/issues/new?${params}`;
   };
   const full = link(issueSummary(shared, note));
   if (full.length <= LINK_LIMIT) return full;

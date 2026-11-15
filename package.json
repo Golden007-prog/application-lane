@@ -23,6 +23,7 @@
     "validate": "node --import tsx scripts/validate.ts",
     "tailoring:import": "node --import tsx scripts/tailoring-import.ts",
     "lane": "node --import tsx scripts/lane.ts",
+    "github-reports": "node --import tsx scripts/github-reports.ts",
     "package": "node scripts/package.mjs"
   },
   "dependencies": {
