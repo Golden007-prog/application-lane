@@ -470,7 +470,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-13-linkedin-section-alone";
+export const CONTENT_VERSION = "2026-11-15-icims-phone-country-list";
 export type Proposal = {
   fieldId: string;
   value: string;
