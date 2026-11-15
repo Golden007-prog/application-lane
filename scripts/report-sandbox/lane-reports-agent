@@ -54,7 +54,7 @@ container() {
     --env-file "$envfile" \
     -e HOME=/home/agent -e LANG=C.UTF-8 -e CI=1 -e JOB_APPLIER_DIR=/nonexistent \
     -e LANE_EXTENSION_DIR=dist/extension-test -e LANE_DEV_TOOLS=0 \
-    --tmpfs /home/agent:rw,exec,size=8g,uid="$(id -u)",gid="$(id -g)",mode=0700 \
+    --tmpfs /home/agent:rw,exec,size=8g,mode=1777 \
     -v "$root/npm-cache:/home/agent/.npm:rw" \
     -v /opt/lane-reports/claude:/usr/local/bin/claude:ro \
     -v "$share:/lane:ro" \
