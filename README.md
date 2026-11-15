@@ -137,12 +137,13 @@ The command line uses the same themes: `npm run lane -- status --theme velocity`
 
 **After updating.** Run `npm run build` again, restart the backend, and press the reload button for Application Lane in `chrome://extensions`. Your profile and settings are kept.
 
-**Something filled wrong.** Use **Report issue** in the side panel while the problem is visible. The report stays on your computer under **Issues** until you export or delete it. To send it to the project, use **Share on GitHub** there: it replaces your details with made-up ones and shows you the result before anything leaves your computer. If you open a GitHub issue yourself, please do not paste personal data.
+**Something filled wrong.** Use **Report issue** in the side panel while the problem is visible. The report stays on your computer under **Issues** until you export or delete it. To send it to the project, use **Share on GitHub** there: it replaces your details with made-up ones and shows you the result before anything leaves your computer. If you open a GitHub issue yourself, please do not paste personal data. Maintainers work on shared reports as described in [Fixing shared reports](docs/fixing-reports.md).
 
 ## More documentation
 
 - [Advanced use](docs/advanced.md): data folder, configuration reference, LaTeX tailoring, saved answers, AI filling settings, issue reports
 - [Development](docs/development.md): building, tests, packaging
+- [Fixing shared reports](docs/fixing-reports.md): for maintainers, turning **Share on GitHub** reports into pull requests with Claude Code, in an isolated session
 - [Architecture and limits](docs/architecture.md)
 - [Privacy policy](PRIVACY.md) · [Security](SECURITY.md) · [Contributing](CONTRIBUTING.md) · [Changelog](CHANGELOG.md)
 
