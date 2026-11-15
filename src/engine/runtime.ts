@@ -7,6 +7,7 @@ import {
   type InterpreterOptions,
 } from "./config/interpreter";
 import { configs, globals } from "./config/catalog";
+import type { InputSelector } from "./config/schema";
 import type { Profile } from "../shared/model";
 import { labelText } from "../extension/semantics";
 
@@ -58,6 +59,37 @@ export async function fillDocument(
 export function resumeSlotOpen(): boolean {
   const config = siteConfig();
   return paths(config?.resumeFirstPaths).some((path) => queryXPathAll(document, path).length > 0);
+}
+
+// The documents this page takes through its site config's upload steps,
+// including those that start from something other than a file box
+// (Greenhouse's upload group, Oracle's upload buttons, TikTok's resume
+// section): their keys ("resume", "coverLetter"). A step with none of these,
+// no file box and nothing left empty finishes without waiting for the
+// tailored documents (background.ts). Relative paths are also looked for
+// from the document itself, so a step is never taken for one without them.
+export function configUploadSlots(): string[] {
+  const config = siteConfig();
+  if (!config) return [];
+  const contexts: (Document | Element)[] = [document, ...paths(config.containerPath).flatMap((path) => queryXPathAll(document, path))];
+  const found = new Set<string>();
+  const walk = (entries: InputSelector[]) => {
+    for (const [key, choices] of entries)
+      for (const choice of choices) {
+        if (typeof choice === "string") continue;
+        if (choice.inputSelectors) walk(choice.inputSelectors);
+        const methods = [choice.method, ...(choice.actions || []).map((action) => action.method)];
+        if (!methods.some((method) => method && /^upload/i.test(method))) continue;
+        const matched = paths(choice.path).some((path) =>
+          path.startsWith(".")
+            ? contexts.some((context) => queryXPathAll(document, path, context).length > 0)
+            : queryXPathAll(document, path).length > 0,
+        );
+        if (matched) found.add(key);
+      }
+  };
+  walk(config.inputSelectors);
+  return [...found];
 }
 
 // Some sites expose a document slot before creating its native file input.

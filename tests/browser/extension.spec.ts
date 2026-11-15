@@ -14815,6 +14815,53 @@ test("a report carries the fill's recording and the page's network traffic, whic
   await expect(panel.getByText(/with recording · network from page load/)).toBeVisible();
 });
 
+// iCIMS' sign-in step asks only for an email and a phone. Both were
+// filled at once, and the step then sat in "Tailoring" for half a minute,
+// waiting for documents it had nowhere to put.
+test("a step with nothing for the documents ends without waiting for them, and a later step that takes them waits for the same ones", async () => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let tailored = 0;
+  runtimeGenerate = async (req, p) => {
+    tailored++;
+    await held;
+    return groundNarrative(
+      { resume: p.facts.map((f) => ({ factId: f.id, text: f.text })), coverLetter: [{ text: "", factIds: ["fact-1"] }], answers: [] },
+      p,
+      req,
+    );
+  };
+  await context.route(`${origin}/sign-in-step`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: '<!doctype html><title>Sign in</title><form id="step"><label>Email<input name="email" type="email"></label><label>Phone<input name="phone" type="tel"></label></form>',
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${origin}/sign-in-step`);
+  await enqueue([page]);
+  await expect(page.locator("[name=email]")).toHaveValue(profile.email, { timeout: 15000 });
+  await expect(page.locator("[name=phone]")).not.toHaveValue("");
+  // The step ends while its documents are still being tailored, which go on
+  // in the background.
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 15000 }).toMatch(/awaiting-user|ready/);
+  const app = (await state()).applications[0];
+  expect(app.draftJobId).toBeTruthy();
+  expect(tailored).toBe(1);
+  // The next step takes a resume: it waits for those documents rather than
+  // tailoring them again.
+  await page.evaluate(() => {
+    document.querySelector("#step")!.innerHTML = '<label>Resume<input name="resume" type="file" accept=".pdf,.docx"></label>';
+  });
+  await ui({ type: "FILL_STEP", id: app.id });
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 15000 }).toBe("preparing");
+  expect(tailored).toBe(1);
+  release();
+  await expect.poll(async () => page.locator("[name=resume]").evaluate((input: HTMLInputElement) => input.files?.length || 0), { timeout: 30000 }).toBe(1);
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 15000 }).toMatch(/awaiting-user|ready/);
+  expect(tailored).toBe(1);
+});
+
 test("a report is shared on GitHub cleaned of the applicant's details, from a preview", async () => {
   await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, firstName: "Morgan", lastName: "Ellery", email: "morgan.ellery@mailbox.test" } });
   await context.route(`${origin}/share-report`, (route) =>

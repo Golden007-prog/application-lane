@@ -2045,6 +2045,13 @@ async function readListOptions(app: Application, frame: { frameId: number; obser
   }
 }
 
+// A step with nothing for its documents, filled again until two passes
+// 1.5 s apart find its form the same (at most ten): what the site does in
+// answer to the fill (a value it cleared, a row its parser rewrote, a
+// confirmation it drew) lands within those passes, as it did within the
+// wait for the documents, and the step ends then instead of half a minute
+// later.
+const settling = new Map<string, { operation: number; form: string; passes: number; at: number }>();
 async function run(app: Application, operation: number) {
   if (!app.startedAt) app.startedAt = Date.now();
   // Each look at whether its documents are ready runs this again: one still
@@ -2378,7 +2385,10 @@ async function run(app: Application, operation: number) {
     return true;
   };
   // First step: no documents yet, and none being made.
-  const startedEarly = !app.jobId && !app.documentJobId && !resumeFirst;
+  // Not while an earlier step's documents are still being tailored (they
+  // went on in the background when that step had no place for them): a second
+  // job would tailor them all again alongside.
+  const startedEarly = !app.jobId && !app.documentJobId && !app.draftJobId && !resumeFirst;
   if (startedEarly && !(await startDocuments())) return;
   // Fill deterministic fields while document generation runs independently.
   if (!waitingOnJob) {
@@ -2501,10 +2511,28 @@ async function run(app: Application, operation: number) {
     await persist();
     return;
   }
+  // Whether this step has anything for the tailored documents and drafted
+  // answers to do, now that the profile's answers are in: a file box or an
+  // upload its site config can make, or a field left empty. A sign-in step
+  // with its email and phone filled (iCIMS) has none, and waited
+  // half a minute for documents it had nowhere to put.
+  const takesDocuments = frames.some(
+    ({ observation }) =>
+      Boolean(observation.documentSlots?.length || observation.resumeSlotOpen || observation.uploadSlots?.length) ||
+      observation.fields.some((field) => field.kind === "file" || (!field.value && !field.protected)),
+  );
+  // Documents an earlier step left tailoring in the background: a step that
+  // takes them waits for those (pollDocumentDrafts keeps them when done)
+  // rather than asking for them again.
+  if (!app.jobId && app.draftJobId && takesDocuments) {
+    touch(app, "preparing", "Tailoring documents while other applications continue…");
+    await persist();
+    return;
+  }
   if (!(await startDocuments(key))) return;
   // A job begun before the fill is known by the form as the fill left it.
   if (app.jobId && !app.generationKey) app.generationKey = key;
-  const job: GenerationJob = await api(`/v1/jobs/${app.jobId}`);
+  let job: GenerationJob = await api(`/v1/jobs/${app.jobId}`);
   if (!alive(app, operation)) return;
   if (
     job.operation !== operation ||
@@ -2533,7 +2561,7 @@ async function run(app: Application, operation: number) {
   // refused is retried in its accepted form (a salary of "USD 100,000"
   // answered "Invalid number." is given as 100000). Applying the documents
   // now would end the fill with the refused value left in place.
-  if (job.status !== "complete" || startedEarly) {
+  if ((job.status !== "complete" || startedEarly) && takesDocuments) {
     // The last field written is no longer what is being worked on: the
     // panel said "Answering: What are your salary expectations?" for the
     // whole minute and a half the drafts took (Fabrikam).
@@ -2553,13 +2581,42 @@ async function run(app: Application, operation: number) {
     await persist();
     return;
   }
-  app.artifacts = job.artifacts;
-  app.documentJobId = job.id;
-  app.posting = job.posting;
-  // A fit check is independent of a fill; its verdict remains on the tracker.
-  if (!app.fitJobId) app.fit = job.fit;
-  // The posting's own title replaces a page's guess ("Work Summary").
-  if (job.posting) app.title = job.posting.title;
+  if (!takesDocuments) {
+    const form = JSON.stringify(frames.map(({ frameId, observation }) => [frameId, observation.documentId, observation.fields.map((field) => [field.id, field.value, field.protected])]));
+    const before = settling.get(app.id);
+    // Woken sooner by something else: the page is given its 1.5 s first.
+    if (before?.operation === operation && Date.now() - before.at < 1500) {
+      schedule(1500 - (Date.now() - before.at));
+      return;
+    }
+    const passes = before?.operation === operation ? before.passes + 1 : 1;
+    if ((before?.operation !== operation || before.form !== form) && passes <= 10) {
+      settling.set(app.id, { operation, form, passes, at: Date.now() });
+      touch(app, "filling", "Checking the page has settled…");
+      await persist();
+      schedule(1500);
+      return;
+    }
+    settling.delete(app.id);
+  }
+  if (job.status !== "complete") {
+    // Nothing on this step for them: the step ends now, and the documents go
+    // on being tailored in the background for the step that takes them
+    // (pollDocumentDrafts keeps them when done, and the card says so).
+    app.draftJobId ||= job.id;
+    app.jobId = undefined;
+    app.generationKey = undefined;
+    job = { ...job, artifacts: [], narrative: undefined };
+    schedule(1500);
+  } else {
+    app.artifacts = job.artifacts;
+    app.documentJobId = job.id;
+    app.posting = job.posting;
+    // A fit check is independent of a fill; its verdict remains on the tracker.
+    if (!app.fitJobId) app.fit = job.fit;
+    // The posting's own title replaces a page's guess ("Work Summary").
+    if (job.posting) app.title = job.posting.title;
+  }
 
   touch(app, "filling", "Applying supported answers and attaching documents…");
   await persist();

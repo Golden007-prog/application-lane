@@ -461,6 +461,9 @@ export type Observation = {
   // An empty resume slot on a site that rewrites the form from the resume
   // (its rule's resumeFirstPaths, SuccessFactors): uploaded before the fill.
   resumeSlotOpen?: boolean;
+  // The documents its site config's upload steps can put on this page
+  // ("resume", "coverLetter"), file box or not (configUploadSlots).
+  uploadSlots?: string[];
   canAdvance: boolean;
   atReview: boolean;
   // Sections the site config can add rows to when the step shows no fields
@@ -470,7 +473,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-15-icims-phone-country-list";
+export const CONTENT_VERSION = "2026-11-15-no-wait-without-documents";
 export type Proposal = {
   fieldId: string;
   value: string;

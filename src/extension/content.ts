@@ -24,6 +24,7 @@ import {
   confirmationInPlace,
   fillDocument,
   resumeSlotOpen,
+  configUploadSlots,
   searchSiteList,
 } from "../engine/runtime";
 import {
@@ -1298,6 +1299,7 @@ if (!window.__applicationLane) {
         .map((label) => /cover\s*letter/i.test(label.textContent || "") ? "cover" : /\b(resume|cv)\b/i.test(label.textContent || "") ? "resume" : "")
         .filter(Boolean))]),
       ...(configEngineEnabled && resumeSlotOpen() ? { resumeSlotOpen: true } : {}),
+      ...((slots) => (slots.length ? { uploadSlots: slots } : {}))(configEngineEnabled ? configUploadSlots() : []),
       ...((folded) => (folded ? { foldedSections: folded } : {}))(document.querySelectorAll('.rcmFormSection button.rcmFormSectionTopBar[aria-expanded="false"]').length),
       canAdvance: Boolean(next),
       atReview,
