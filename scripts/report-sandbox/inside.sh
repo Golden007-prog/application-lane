@@ -18,7 +18,8 @@ if [[ "$mode" == check ]]; then
   [[ ! -e /mnt/c && ! -e /mnt/wslg ]] || fail "a Windows drive or WSL folder is mounted"
   [[ ! -e /srv/lane-reports ]] || fail "the work area is mounted"
   # Its own process list: the command that started it is outside, unseen.
-  for cmdline in /proc/[0-9]*/cmdline; do tr '\0' ' ' <"$cmdline" 2>/dev/null; echo; done | grep -q lane-reports-agent && fail "it can see the computer's processes"
+  # (The pattern is written so that grep's own command line does not match it.)
+  for cmdline in /proc/[0-9]*/cmdline; do tr '\0' ' ' <"$cmdline" 2>/dev/null; echo; done | grep -q 'lane-reports-agen[t]' && fail "it can see the computer's processes"
   # A service listening on the computer's own localhost (as the backend
   # does) is out of reach, however it is addressed.
   node -e '
