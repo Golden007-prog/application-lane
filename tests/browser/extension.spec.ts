@@ -7,6 +7,7 @@ import {
   type Worker,
 } from "@playwright/test";
 import { createServer, type Server } from "node:http";
+import { existsSync } from "node:fs";
 import { mkdir, mkdtemp, cp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join, resolve, sep } from "node:path";
@@ -26,6 +27,7 @@ import { icimsCandidatePage, icimsProfileAfterUpload } from "./icims-fixture";
 import { realSchools, schoolsWithout } from "../support/schools";
 import { ssrSelectMarkup } from "./ssr-select-fixture";
 import { proposals as knownProposals } from "../../src/shared/matching";
+import { devToolsEnabled } from "../../src/shared/dev-tools";
 import { rememberChromiumProfile, seedChromiumProfile } from "../support/chromium-profile";
 
 const token = "browser-fixture-token-".repeat(4);
@@ -14266,6 +14268,11 @@ test("a profile exported from the profile page can be imported again, with its s
   await expect(panel.getByLabel("First name", { exact: true })).toHaveValue("Imported");
 });
 
+// The Fixer page is the owner's development tool: a build has it only where
+// the fixer's script is in the tree (the public repository leaves it out), by
+// the same rule as scripts/build.mjs.
+const devTools = devToolsEnabled(process.env, () => existsSync(new URL("../../scripts/fixer.ts", import.meta.url)));
+
 test("the side panel holds only applications; the rest opens as a dashboard tab", async () => {
   await panel.bringToFront();
   await expect(panel.getByRole("navigation")).toHaveCount(0);
@@ -14274,7 +14281,7 @@ test("the side panel holds only applications; the rest opens as a dashboard tab"
   await panel.getByRole("button", { name: "Dashboard" }).click();
   const dashboard = await opened;
   await expect(dashboard).toHaveURL(/dashboard\.html#profile$/);
-  await expect(dashboard.getByRole("navigation").getByRole("button")).toHaveText(["Your profile", "Find jobs", "Submitted", "Fixer", "Issues", "Settings"]);
+  await expect(dashboard.getByRole("navigation").getByRole("button")).toHaveText(["Your profile", "Find jobs", "Submitted", ...(devTools ? ["Fixer"] : []), "Issues", "Settings"]);
   await expect(dashboard.getByRole("heading", { name: "Applications", exact: true })).toHaveCount(0);
   await dashboard.getByRole("button", { name: "Settings", exact: true }).click();
   await expect(dashboard.getByRole("heading", { name: "Backend connection" })).toBeVisible();
@@ -14316,6 +14323,7 @@ test("the dashboard connects to an unpaired backend with the code it shows", asy
 // The fixer's work was in files only: the dashboard shows
 // whether it runs, what it is on, and what it found and fixed.
 test("the dashboard's Fixer page shows whether the fixer runs and its work", async () => {
+  test.skip(!devTools, "the fixer is not part of this build");
   const folder = join(backendDirectory, "fixer");
   await mkdir(join(folder, "tasks"), { recursive: true });
   const task = "00000000-0000-4000-8000-0000000000f1";
