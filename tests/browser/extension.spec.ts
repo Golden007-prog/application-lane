@@ -8322,6 +8322,24 @@ test("the current-tab card names a newly active tab while it is still being read
   await first.close();
 });
 
+// The card was read once, when the tab loaded; a tab tracked after that kept
+// offering "Attach current tab" for the application that already held it
+// (on GitHub's runners every time, in two TalNet tests).
+test("the current-tab card follows a tab that is tracked after the card read it", async () => {
+  const page = await context.newPage();
+  await page.goto(`${origin}/tracked-later`);
+  await page.bringToFront();
+  await panel.getByRole("button", { name: "Scan current tab" }).click();
+  const card = panel.getByRole("region", { name: "Current browser tab" });
+  await expect(card.getByRole("combobox", { name: "Attach current tab" })).toBeVisible();
+  const tabId = (await panel.evaluate(async () => chrome.tabs.query({}))).find((tab) => tab.url === page.url())!.id!;
+  await ui({ type: "TRACK_ITEMS", items: [{ url: page.url(), tabId }] });
+  await expect(card.getByText("Part of", { exact: false })).toBeVisible();
+  await expect(card).toContainText("Frontend Engineer /tracked-later");
+  await expect(card.getByRole("combobox", { name: "Attach current tab" })).toHaveCount(0);
+  await page.close();
+});
+
 test("the current-tab card records and stops through its buttons", async () => {
   const page = await context.newPage();
   await page.goto(`${origin}/record-buttons`);

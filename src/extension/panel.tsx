@@ -774,6 +774,19 @@ function App() {
       chrome.tabs.onUpdated.removeListener(updated);
     };
   }, []);
+  // The card reads the tab when it comes to the front or loads; a tab tracked
+  // or attached after that (Choose open tabs, Track links with the tab open)
+  // left the card offering "Attach current tab" for a tab its application
+  // already held, until another tab was chosen. Whenever the queue says the
+  // tab belongs elsewhere than the card shows, the tab is read again.
+  const shownTab = tabContext?.tabId;
+  const holder =
+    shownTab === undefined
+      ? undefined
+      : queue.applications.find((app) => app.tabs.some((tab) => tab.tabId === shownTab && !tab.closedAt) || app.tabId === shownTab)?.id;
+  useEffect(() => {
+    if (shownTab !== undefined && holder !== tabContext?.applicationId) void scanActive();
+  }, [shownTab, holder, tabContext?.applicationId]);
   // The history of submissions, read again whenever one more goes in.
   const submittedNow = queue.applications.filter((app) => app.workflowStage === "submitted").length;
   useEffect(() => {
