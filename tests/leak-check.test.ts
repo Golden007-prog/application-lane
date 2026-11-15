@@ -86,6 +86,9 @@ test("the leak check leaves everyday words, job-site vendors and parts of other 
 test("the leak check's allow list and extra terms come from the data folder", () => {
   const terms = collectTerms({ profile, applications, extra: ["Fabrikam"], allow: ["Atlas", "Blacksburg"] });
   assert.deepEqual(found(["Atlas's form in Blacksburg", "at Fabrikam"], terms), ["a.ts:2 Fabrikam"]);
+  // A one-word listed term that is also a word is matched only as a name.
+  const listed = collectTerms({ profile, applications: [], extra: ["Harbor", "Wingtip Toys"] });
+  assert.deepEqual(found(["the harbor master", "Harbor's form", "at wingtip toys"], listed), ["a.ts:2 Harbor", "a.ts:3 Wingtip Toys"]);
 });
 
 test("the leak check reads the added lines of a diff with their file and line, and new paths", () => {

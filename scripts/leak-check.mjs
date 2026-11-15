@@ -132,7 +132,8 @@ export function collectTerms({ profile = {}, applications = [], extra = [], allo
     company(application.company);
     for (const url of [application.url, application.postingUrl, application.sourceUrl]) for (const label of hostTerms(url)) company(label);
   }
-  for (const line of extra) add(line, "listed term");
+  // A one-word listed term is matched as a company's name is (Harbor, not harbor).
+  for (const line of extra) add(line, "listed term", /\s/.test(text(line)) ? {} : { named: true });
   const allowed = new Set(allow.map((line) => text(line).toLowerCase()).filter(Boolean));
   const seen = new Set();
   return terms.filter(({ term, digits }) => {

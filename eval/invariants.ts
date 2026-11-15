@@ -55,8 +55,8 @@ export type PageFacts = {
   writeFailures?: { label: string; reason: string }[];
   // Questions the extension left alone because another field has the same
   // label (its own list of what it did not fill): rows it could not tell
-  // apart. Optional ones too, which no other check sees (Intuit's Avature
-  // left "Did you graduate?" and "End date" this way, 2026-10-17).
+  // apart. Optional ones too, which no other check sees (an Avature form
+  // left "Did you graduate?" and "End date" this way).
   sameLabel?: string[];
 };
 const standInValues = /^(stand-in answer|stand\.in@example\.com|https:\/\/example\.com)$/i;
