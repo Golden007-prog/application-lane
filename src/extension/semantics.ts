@@ -318,6 +318,18 @@ export function fieldLabel(element: Control): string {
     const question = textBeforeGroup(icimsGroup);
     if (question) return cleanLabel(`${question}: ${own}`);
   }
+  // iCIMS' phone pair (".country-phone-group"): the number's box is named
+  // only "Number", and the country list's anchor by its aria-label, which
+  // carries the placeholder ("Country Code — Make a Selection —"). Each
+  // takes the group's phone wording.
+  const phoneGroup = element.closest(".country-phone-group");
+  if (phoneGroup) {
+    if (/^number$/i.test(own.trim()) && element.closest(".phone-number")) return "Phone number";
+    if (element.matches("a.dropdown-select")) {
+      const shown = labelText(phoneGroup.querySelector(".country-code > label"));
+      if (/country code/i.test(shown)) return cleanLabel(shown);
+    }
+  }
   if (promptOnly.test(own)) {
     const question = questionAbove(element);
     if (question) return cleanLabel(question);
@@ -1213,7 +1225,7 @@ export function selectedCustomValue(element: Control): string | undefined {
   }
   // iCIMS search dropdowns show their placeholder as the anchor's text.
   if (
-    element.matches('a[id$="_icimsDropdown"]') &&
+    element.matches('a[id$="_icimsDropdown"],a.dropdown-select[role="combobox"]') &&
     /^[\s\u2014-]*(make a selection|please select|select one|loading\.*)[\s\u2014-]*$/i.test(
       element.textContent || "",
     )

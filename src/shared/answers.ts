@@ -145,7 +145,9 @@ export function rankOption(
     optionText.match(/^(.+?)\s*\([A-Z][A-Z&/.]{1,7}\)\s*$/)?.[1] ??
     optionText.match(/^(.+?)\s*\(?\+\d{1,4}\)?\s*$/)?.[1] ??
     // Or one that puts the dial code first: "+1 (United States)" (Oracle's).
-    optionText.match(/^\s*\+\d{1,4}\s*\((.+)\)\s*$/)?.[1];
+    optionText.match(/^\s*\+\d{1,4}\s*\((.+)\)\s*$/)?.[1] ??
+    // Or the code in brackets first: "(+1) United States" (iCIMS').
+    optionText.match(/^\s*\(\+\d{1,4}\)\s*(.+?)\s*$/)?.[1];
   if (coded && norm(coded) === norm(proposal.value)) return 40;
   // Or one of the answer's other names: "United States +1" for the
   // profile's "United States of America".

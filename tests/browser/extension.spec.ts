@@ -1754,6 +1754,75 @@ test("a Workday phone code the site picked is reported as answered, not as a req
   });
 });
 
+// iCIMS' email step (captured on an employer's iCIMS careers site): the phone's country
+// list is an anchor whose aria-label carries its placeholder ("Country Code —
+// Make a Selection —"), beside a bare "Number" box. The placeholder was read
+// as a code the site had picked, and neither field was filled.
+test("an iCIMS email step's empty phone country list and bare Number box are filled", async () => {
+  test.setTimeout(90000);
+  const site = atsOrigins[4];
+  await context.route(`${site}/jobs/2/intern/login**`, (route) =>
+    route.fulfill({
+      contentType: "text/html; charset=utf-8",
+      body: `<!doctype html><body><div class="iCIMS_MainWrapper iCIMS_LoginPage"><form id="enterEmailForm" class="iCIMS_SignIn" onsubmit="return false">
+        <label for="email">Email</label>
+        <input type="email" autocomplete="email" id="email" name="css_loginName" class="form-control">
+        <div class="country-phone-group">
+          <div class="country-code">
+            <label for="countryCode">Phone Country Code</label>
+            <div class="country-code iCIMS_InfoData">
+              <input type="text" id="selectedCountryCode" name="countryCodeSelect" class="form-control" tabindex="-1" aria-hidden="true" style="display: none;">
+              <a id="dropdown" class="dropdown-select" aria-expanded="false" tabindex="0" aria-label="Country Code — Make a Selection —" aria-required="true" role="combobox" aria-controls="dropdownOptions">
+                <span id="dropdown-select-span" class="dropdown-text"><span class="dropdown-placeholder">— Make a Selection —</span></span>
+                <div class="dropdown-arrow-container"><i class="dropdown-arrow"></i></div>
+              </a>
+              <div class="dropdown-container hidden" id="dropdownOptions">
+                <div aria-live="polite">
+                  <input type="text" class="dropdown-search" id="countryCode" name="countryCodeSearch" placeholder="— Type to Search —">
+                  <ul class="dropdown-results" name="countryCodeSelect" id="dropdownResults" role="listbox">
+                    <li class="dropdown-result result-selectable" role="option" dropdown-result="-1" aria-label="— Make a Selection —" tabindex="0"><span class="dropdown-placeholder">— Make a Selection —</span></li>
+                    <li class="dropdown-result result-selectable" role="option" value="GB" dropdown-result="GB" aria-label="(+44) United Kingdom" tabindex="0">(+44) United Kingdom</li>
+                    <li class="dropdown-result result-selectable" role="option" value="US" dropdown-result="US" aria-label="(+1) United States" tabindex="0">(+1) United States</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="phone-number">
+            <label for="phoneNumber">Number</label>
+            <input type="text" autocomplete="tel-national" id="phoneNumber" name="css_phoneNumber" class="form-control">
+          </div>
+        </div>
+        <input id="enterEmailSubmitButton" type="submit" class="iCIMS_PrimaryButton" value="Next">
+      </form></div>
+      <script>
+        const link = document.getElementById("dropdown"), box = document.getElementById("dropdownOptions");
+        link.addEventListener("click", () => {
+          const open = link.getAttribute("aria-expanded") !== "true";
+          link.setAttribute("aria-expanded", String(open));
+          box.classList.toggle("hidden", !open);
+        });
+        document.querySelectorAll(".dropdown-result").forEach((item) => item.addEventListener("click", () => {
+          const chosen = item.getAttribute("dropdown-result");
+          document.getElementById("dropdown-select-span").textContent = item.textContent.trim();
+          document.getElementById("selectedCountryCode").value = chosen === "-1" ? "" : chosen;
+          link.setAttribute("aria-expanded", "false");
+          box.classList.add("hidden");
+        }));
+      </script></body>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${site}/jobs/2/intern/login?step=email`);
+  const observed = (await content(page, { type: "INSPECT" })).data.fields.find((field: { label: string }) => /country code/i.test(field.label));
+  expect(observed).toMatchObject({ value: "" });
+  expect(observed.siteValue).toBeFalsy();
+  await enqueue([page]);
+  await expect(page.locator("#phoneNumber")).toHaveValue("6025550101", { timeout: 60000 });
+  await expect(page.locator("#dropdown-select-span")).toHaveText("(+1) United States", { timeout: 60000 });
+  await expect(page.locator("#selectedCountryCode")).toHaveValue("US");
+});
+
 // The same page with Workday's list endpoint answering (values/educations/
 // fieldsOfStudy, as its rule's optionsSource names it).
 // one employer's Workday: Enter on the search chose

@@ -7,7 +7,7 @@ import { test } from "node:test";
 import { globalConfigSchema } from "../src/engine/config/schema";
 import { matchOption } from "../src/engine/values";
 import { normalize } from "../src/shared/model";
-import { pickOption } from "../src/shared/answers";
+import { pickOption, rankOption } from "../src/shared/answers";
 import geographyData from "../src/engine/config/globals.json" with { type: "json" };
 
 const globals = globalConfigSchema.parse(JSON.parse(await readFile("src/engine/config/globals.json", "utf8")));
@@ -269,6 +269,9 @@ test("the phone's country code is its own field, and national-number fields get 
   assert.equal(answer("Phone number", londoner, { kind: "text", options: [] }), "20 7946 0958");
   assert.equal(answer("Country code", londoner, { kind: "text", options: [] }), "+44");
   assert.equal(answer("Phone country code", londoner, { kind: "select", options: ["United States (+1)", "United Kingdom (+44)"] }), "United Kingdom (+44)");
+  // iCIMS' list puts the code first, in brackets.
+  assert.ok(rankOption({ value: "United States" }, "(+1) United States") !== undefined);
+  assert.equal(rankOption({ value: "United States" }, "(+44) United Kingdom"), undefined);
   // A list of countries takes the code's country, else the residence.
   const abroad = person({ country: "Germany", phone: "+1 415 555 0100" });
   assert.deepEqual(canonicalValues("phone_country", abroad), ["United States"]);
