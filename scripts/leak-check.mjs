@@ -315,4 +315,6 @@ function main(argv) {
   return 1;
 }
 
-if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = main(process.argv);
+// Run as a script only: bundled into the backend (src/server/clean-report.ts),
+// import.meta.url is the bundle's, which node also runs.
+if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url) && /leak-check\.mjs$/.test(process.argv[1])) process.exitCode = main(process.argv);

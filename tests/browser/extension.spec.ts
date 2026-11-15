@@ -14746,6 +14746,44 @@ test("a report carries the fill's recording and the page's network traffic, whic
   await expect(panel.getByText(/with recording · network from page load/)).toBeVisible();
 });
 
+test("a report is shared on GitHub cleaned of the applicant's details, from a preview", async () => {
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, firstName: "Morgan", lastName: "Ellery", email: "morgan.ellery@mailbox.test" } });
+  await context.route(`${origin}/share-report`, (route) =>
+    route.fulfill({ contentType: "text/html", body: '<!doctype html><title>Data Analyst</title><form><h2>Morgan Ellery</h2><label>Email<input name="email" value="morgan.ellery@mailbox.test"></label></form>' }),
+  );
+  await context.route("https://github.com/**", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html><title>New issue</title>" }));
+  const page = await context.newPage();
+  await page.goto(`${origin}/share-report`);
+  const tabId = await panel.evaluate(async (url) => (await chrome.tabs.query({})).find((t) => t.url === url)!.id!, page.url());
+  const captured = await ui({ type: "REPORT_ISSUE", tabId, category: "wrong-value", note: "Morgan Ellery's email went in the wrong box." });
+  expect(captured.saved).toBe(true);
+  await panel.bringToFront();
+  await showDashboard("issues");
+  await panel.getByRole("button", { name: "Share on GitHub" }).click();
+  const dialog = panel.getByRole("dialog", { name: "Share report on GitHub" });
+  await expect(dialog.getByLabel("Issue summary")).toContainText("- Category: wrong-value");
+  await expect(dialog).toContainText(/made-up ones: .*name/);
+  for (const detail of ["Morgan", "Ellery", "mailbox.test"]) await expect(dialog).not.toContainText(detail);
+  const [download, issue] = await Promise.all([
+    panel.waitForEvent("download"),
+    context.waitForEvent("page"),
+    dialog.getByRole("button", { name: "Save report and open GitHub" }).click(),
+  ]);
+  expect(download.suggestedFilename()).toBe(`application-lane-report-${captured.report.id}.json`);
+  const file = await readFile((await download.path())!, "utf8");
+  expect(JSON.parse(file).id).toBe(captured.report.id);
+  for (const detail of ["Morgan", "Ellery", "mailbox.test"]) expect(file).not.toContain(detail);
+  await issue.waitForLoadState();
+  const link = new URL(issue.url());
+  expect(`${link.origin}${link.pathname}`).toBe("https://github.com/Nikman800/application-lane/issues/new");
+  expect(link.searchParams.get("template")).toBe("fill-report.yml");
+  expect(link.searchParams.get("summary")).toContain("- Category: wrong-value");
+  expect(issue.url()).not.toMatch(/Morgan|Ellery|mailbox/);
+  await expect(dialog).toHaveCount(0);
+  // The saved report is unchanged.
+  expect((await ui({ type: "API", path: `/v1/issues/${captured.report.id}` })).note).toContain("Morgan Ellery");
+});
+
 test("a field the site changed and then emptied is filled again", async () => {
   await context.route(`${origin}/site-changed-then-empty`, (route) =>
     route.fulfill({

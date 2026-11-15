@@ -4306,6 +4306,11 @@ async function uiMessage(message: any) {
   if (message.type === "API") {
     const allowed =
       /^(\/v1\/(status|profile|profile\/conflicts|profile\/bundle|import|settings|config|transcript|data|issues|recordings|submissions|fixer|fixer\/settings|fixer\/health|search|search\/settings)|\/v1\/(artifacts|jobs|issues|recordings)\/[a-f0-9-]{36})$/;
+    // A report cleaned for sharing is only read.
+    if (/^\/v1\/issues\/[a-f0-9-]{36}\/share$/.test(message.path)) {
+      if ((message.method || "GET") !== "GET") throw new Error("Unsupported backend operation.");
+      return api(message.path);
+    }
     // The panel reads the history of submissions and the fixer's work;
     // the background and the fixer write them.
     if (["/v1/submissions", "/v1/fixer"].includes(message.path) && (message.method || "GET") !== "GET")

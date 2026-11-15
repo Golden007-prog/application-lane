@@ -123,3 +123,19 @@ test("terms listed in leak-terms.txt are removed too", () => {
   const { report: cleaned } = cleanReport(base, { profile, applications, extra: ["Larkspur Grove"] });
   assert.ok(!cleaned.note.includes("Larkspur"));
 });
+
+// A page's text as the capture reads it runs a heading into the label after
+// it: "Morgan ElleryEmail", where a whole-word match never sees "Ellery".
+test("details run together with the words around them are replaced too", () => {
+  const glued = report();
+  (glued.frames[0].observation as any).description = "Morgan ElleryEmailPhoneHarborview AnalyticsSubmitTrey ResearchApply";
+  glued.note = "The heading showed EmailMorgan and ELLERY.";
+  const { report: cleaned } = cleanReport(glued, { profile, applications });
+  const shared = JSON.stringify(cleaned);
+  for (const detail of details) assert.ok(!shared.toLowerCase().includes(detail), `${detail} is still in the report`);
+  assert.equal((cleaned.frames[0].observation as any).description, "Alex RiveraEmailPhoneNorthwind LabsSubmitContosoApply");
+  // Words that only begin with a detail stay as they are.
+  const words = report();
+  words.note = "Morgantown and Elleryson are other places.";
+  assert.equal(cleanReport(words, { profile, applications }).report.note, "Morgantown and Elleryson are other places.");
+});

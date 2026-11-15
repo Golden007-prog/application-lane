@@ -20,6 +20,7 @@ import { Appearance } from "./appearance";
 import { isGoal, useStoredValue } from "./prefs";
 import { ConnectCard, OnboardingChecklist } from "./onboarding";
 import { computeProgress, DEFAULT_DAILY_GOAL } from "../shared/progress";
+import { ATTACHMENT_LIMIT, issueSummary, newIssueLink, replacedSummary, sharedFileName, type SharedReport } from "../shared/share";
 import {
   emptyProfile,
   type Application,
@@ -533,6 +534,8 @@ function App() {
   const [pickerQuery, setPickerQuery] = useState("");
   const [search, setSearch] = useState("");
   const [issueTarget, setIssueTarget] = useState<{ tabId: number; applicationId?: string }>();
+  // A saved report, cleaned for sharing on GitHub, while its preview is open.
+  const [sharing, setSharing] = useState<SharedReport>();
   const [issueCategory, setIssueCategory] = useState<IssueCategory>("fill-failure");
   const [issueNote, setIssueNote] = useState("");
   const [issueConsent, setIssueConsent] = useState(false);
@@ -948,6 +951,16 @@ function App() {
       JSON.stringify(report, null, 2),
       "application/json",
     );
+  }
+  // Cleaned on the backend; the preview shows what would be shared.
+  async function shareIssue(id: string) {
+    setSharing(await api<SharedReport>(`/v1/issues/${id}/share`));
+  }
+  // The cleaned file is saved for the applicant to attach (a whole report is
+  // far too long for a link), and the issue form opens filled in.
+  function openSharedIssue(shared: SharedReport) {
+    saveBlob(sharedFileName(shared.report), JSON.stringify(shared.report, null, 2), "application/json");
+    window.open(newIssueLink(shared), "_blank", "noopener");
   }
   async function copyIssue(id: string) {
     const report = await api<IssueReport>(`/v1/issues/${id}`);
@@ -2389,6 +2402,7 @@ function App() {
                       {issue.fixer && <FixerProblems result={issue.fixer} />}
                     </div>
                     <div className="actions">
+                      <button className="text-button" onClick={() => void action(() => shareIssue(issue.id))}>Share on GitHub</button>
                       <button className="text-button" onClick={() => void action(() => exportIssue(issue.id))}>Export JSON</button>
                       <button className="text-button" onClick={() => void action(() => copyIssue(issue.id), "Markdown summary copied.")}>Copy summary</button>
                       <button
@@ -3737,6 +3751,60 @@ function App() {
           </section>
         </div>
       )}
+      {sharing && (() => {
+        const file = JSON.stringify(sharing.report, null, 2);
+        const size = new Blob([file]).size;
+        const tooLarge = size > ATTACHMENT_LIMIT;
+        return (
+          <div className="modal-backdrop" onClick={() => setSharing(undefined)}>
+            <section
+              className="modal share-modal"
+              role="dialog"
+              aria-modal="true"
+              aria-label="Share report on GitHub"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="section-title">
+                <h2>Share on GitHub</h2>
+                <button className="icon-button" aria-label="Close share preview" onClick={() => setSharing(undefined)}>×</button>
+              </div>
+              <p className="help">
+                GitHub issues are public. Your details in this report were replaced with made-up ones
+                {Object.keys(sharing.replaced).length ? `: ${replacedSummary(sharing.replaced)}` : " (none were found)"}.
+                {sharing.removed.length ? ` Left out: ${sharing.removed.join(", ")}.` : ""} The company and site of
+                this application stay, so the problem can be reproduced. Look the preview over before you share it.
+              </p>
+              <h3>Summary for the issue</h3>
+              <pre className="share-preview" aria-label="Issue summary">{issueSummary(sharing)}</pre>
+              <details>
+                <summary>Cleaned report ({(size / 1024 / 1024).toFixed(size < 1024 * 1024 ? 2 : 1)} MB)</summary>
+                <pre className="share-preview" aria-label="Cleaned report">{file.length > 200_000 ? `${file.slice(0, 200_000)}\n…` : file}</pre>
+              </details>
+              {tooLarge && (
+                <p role="alert" className="notice">
+                  The cleaned report is larger than the 25 MB GitHub takes as an attachment.
+                </p>
+              )}
+              <p className="help">
+                The cleaned report is saved to your downloads as {sharedFileName(sharing.report)}. Drag it into the
+                issue's Cleaned report box on GitHub, then submit the issue there.
+              </p>
+              <div className="actions">
+                <button
+                  disabled={tooLarge}
+                  onClick={() => {
+                    openSharedIssue(sharing);
+                    setSharing(undefined);
+                  }}
+                >
+                  Save report and open GitHub
+                </button>
+                <button className="secondary" onClick={() => setSharing(undefined)}>Cancel</button>
+              </div>
+            </section>
+          </div>
+        );
+      })()}
       {review && (
         <div className="modal-backdrop" onClick={() => setReview(undefined)}>
           <section

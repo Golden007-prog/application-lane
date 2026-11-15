@@ -1329,6 +1329,22 @@ footer span:last-child {
 .issue-modal {
   max-width: 540px;
 }
+.share-modal {
+  max-width: 680px;
+}
+.share-preview {
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  color: var(--text);
+  font-family: var(--font-mono);
+}
 .issue-images {
   display: flex;
   flex-wrap: wrap;

@@ -147,6 +147,18 @@ function shaped(original: string, standIn: string) {
 
 const escape = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
+// A term in page text run together with the words beside it: a heading and
+// the label after it read "Morgan ElleryEmail", where the leak check's word
+// edges never find "Ellery". There a capital after a small letter is an edge
+// too. As written and in title case, as names and companies are shown.
+function glued(term: LeakTerm): RegExp | undefined {
+  if (term.digits || term.term.trim().length < 3) return;
+  const words = term.term.trim().split(/\s+/);
+  const title = words.map((word) => word[0].toUpperCase() + word.slice(1).toLowerCase());
+  const forms = [...new Set([words, title].map((form) => form.map(escape).join("[\\s_-]+")))];
+  return new RegExp(`(?:(?<![\\p{L}\\p{N}])|(?<=\\p{Ll}))(?:${forms.join("|")})(?:(?![\\p{L}\\p{N}])|(?=\\p{Lu}))`, "gu");
+}
+
 // Each match of a term in `value`, replaced. A match can carry more than the
 // term (a company's host label "contoso.wd1."), so only the term in it changes.
 function replaceTerm(value: string, term: LeakTerm, standIn: string, count: () => void): string {
@@ -162,15 +174,22 @@ function replaceTerm(value: string, term: LeakTerm, standIn: string, count: () =
     });
   }
   const inside = new RegExp(term.term.split(/\s+/).map(escape).join("[\\s_-]+"), "i");
+  // Joined as the original was (Morgan_Ellery_Resume.pdf -> Alex_Rivera_Resume.pdf).
+  const swap = (found: string) => {
+    const gaps = found.match(/[\s_-]+/g) ?? [];
+    const words = standIn.split(" ");
+    const joined = gaps.length === words.length - 1 ? words.map((word, at) => word + (gaps[at] ?? "")).join("") : standIn;
+    return shaped(found, joined);
+  };
+  const runTogether = glued(term);
+  if (runTogether)
+    value = value.replace(runTogether, (found) => {
+      count();
+      return swap(found);
+    });
   return value.replace(everywhere, (match) => {
     count();
-    return match.replace(inside, (found) => {
-      // Joined as the original was (Morgan_Ellery_Resume.pdf -> Alex_Rivera_Resume.pdf).
-      const gaps = found.match(/[\s_-]+/g) ?? [];
-      const words = standIn.split(" ");
-      const joined = gaps.length === words.length - 1 ? words.map((word, at) => word + (gaps[at] ?? "")).join("") : standIn;
-      return shaped(found, joined);
-    });
+    return match.replace(inside, swap);
   });
 }
 
@@ -226,7 +245,10 @@ export function cleanReport(report: IssueReport, input: CleanInput): CleanedRepo
   // Read again as the leak check reads a commit: anything still there (a
   // stand-in that was itself a term, say) refuses the report.
   const lines = mapLines(cleaned);
-  const left = findLeaks(lines, terms);
+  const left = [
+    ...findLeaks(lines, terms),
+    ...terms.filter((term) => lines.some(({ line }) => { const pattern = glued(term); return pattern ? new RegExp(pattern.source, "u").test(line) : false; })),
+  ];
   if (left.length) throw new ReportNotClean([...new Set(left.map((hit) => hit.kind))]);
   return { report: cleaned, replaced, removed };
 }

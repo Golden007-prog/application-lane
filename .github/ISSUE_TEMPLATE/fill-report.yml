@@ -1,0 +1,38 @@
+name: Fill report
+description: Share a report saved by Application Lane, cleaned of your details. Open it from Dashboard → Issues → Share on GitHub.
+labels: ["fill report"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        This form is filled in by **Share on GitHub** in Application Lane's dashboard (Issues page).
+        The extension replaces your name, contact details, address, schools, employers, references and the
+        other companies you applied to with made-up ones. It also leaves out the network log, the recording
+        and your screenshots. Look the summary over before you submit: this issue is public.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: Written by the extension from the cleaned report. Add anything it missed.
+    validations:
+      required: true
+  - type: textarea
+    id: report
+    attributes:
+      label: Cleaned report
+      description: Drag the file Application Lane saved (application-lane-report-….json, in your Downloads folder) into this box.
+      placeholder: Drop application-lane-report-….json here
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What should have happened?
+      description: The value or step you expected, if the summary does not say.
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: Privacy check
+      options:
+        - label: I read the preview in Application Lane and the summary above, and they hold none of my personal details.
+          required: true

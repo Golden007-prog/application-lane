@@ -13,6 +13,7 @@ import { ISSUE_IMAGE_LIMIT, generationSchema, profileSchema, type FixerItem, typ
 import { cleanFixerSettings } from "../shared/fixer-settings";
 import { devToolsEnabled } from "../shared/dev-tools";
 import { Store, atomicJSON, type Config } from "./store";
+import { cleanReport, ReportNotClean } from "./clean-report";
 import { attachLive } from "./live";
 import { knownOpenings as knownFrom, profileTargets, searchJobs, searchSettingsSchema, stageDefaults, isTracked, type KnownOpening } from "./job-search";
 import { checkSites, type SiteCheck } from "./site-check";
@@ -920,6 +921,30 @@ export async function createApp(
           200,
           reports.sort((a, b) => b.createdAt - a.createdAt),
         );
+      }
+      // A report cleaned of the applicant's details, to share on GitHub
+      // (src/server/clean-report.ts): nothing is saved, and a report that
+      // could not be cleaned is refused.
+      const shareMatch = path.match(/^\/v1\/issues\/([a-f0-9-]{36})\/share$/);
+      if (shareMatch && req.method === "GET") {
+        const report = await readFile(join(directory, "issues", `${shareMatch[1]}.json`), "utf8").catch(() => "");
+        if (!report) return send(res, 404, { error: "Issue not found." });
+        const json = async (name: string) => JSON.parse(await readFile(join(directory, name), "utf8").catch(() => "null"));
+        const lines = async (name: string) =>
+          (await readFile(join(directory, name), "utf8").catch(() => "")).split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#"));
+        const queued = await json("queue.json");
+        const submitted = await json("submissions.json");
+        try {
+          return send(res, 200, cleanReport(JSON.parse(report), {
+            profile: store.data.profile,
+            applications: [...(Array.isArray(queued?.applications) ? queued.applications : []), ...(Array.isArray(submitted) ? submitted : [])],
+            extra: await lines("leak-terms.txt"),
+            allow: await lines("leak-allow.txt"),
+          }));
+        } catch (error) {
+          if (error instanceof ReportNotClean) return send(res, 422, { error: error.message, kinds: error.kinds });
+          throw error;
+        }
       }
       const issueMatch = path.match(/^\/v1\/issues\/([a-f0-9-]{36})$/);
       if (issueMatch) {
