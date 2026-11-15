@@ -6,37 +6,53 @@
 #   claude setup-token
 #   sudo bash scripts/report-sandbox/setup.sh
 #
-# It asks for the token, without showing it. It creates the lane-reports
-# system user, which cannot read your home folder (your profile, documents,
-# applications, and your GitHub and Claude sign-ins), and its work area
-# /srv/lane-reports:
-#   checkout/   its own clone of the public repository, which only it writes
-#   browsers/   a copy of the Playwright browsers this repository's tests use
-#   home/       its home, with the Claude token
+# It asks for the token, without showing it. Each report is worked on in a
+# container, which lane-reports (a system user that cannot read your home
+# folder) starts with rootless Podman. The container clones the public
+# repository afresh every time, has its own process list, and its own
+# network, from which this computer's localhost (your backend) cannot be
+# reached. It installs Podman if it is missing, and keeps in /srv/lane-reports:
+#   home/       lane-reports' home: its Claude token and Podman's images
+#   run/        Podman's runtime folder
+#   npm-cache/  packages downloaded for the container, checked against the lock file on use
 #   inbox/      reports you hand it (github-reports work writes them), which it only reads
 #   outbox/     what it leaves for you to read: a verdict and a patch
-# Claude Code is copied to /opt/lane-reports/claude, the session's command to
-# /usr/local/bin/lane-reports-agent and its instructions to
-# /usr/local/share/lane-reports/PROMPT.md, all root-owned so it cannot change
-# them. One sudoers rule lets you run that command as lane-reports, and
-# nothing else. It has no GitHub sign-in: pull requests are opened by
-# github-reports work, as you, from the patch it leaves.
+# Claude Code is copied to /opt/lane-reports/claude, and the session's
+# command to /usr/local/bin/lane-reports-agent, with its instructions and the
+# script run in the container in /usr/local/share/lane-reports, all
+# root-owned so it cannot change them. One sudoers rule lets you run that
+# command as lane-reports, and nothing else. It has no GitHub sign-in: pull
+# requests are opened by github-reports work, as you, from the patch it leaves.
 #
-# Run it again to update Claude Code, the command, its instructions, the
-# browsers or the token (press Enter at the prompt to keep the token).
+# On WSL it also mounts the Windows drives for you alone (/etc/wsl.conf),
+# which takes effect after `wsl --shutdown` from Windows.
+#
+# Run it again to update Claude Code, the image (after a Playwright update),
+# the command, its instructions or the token (press Enter at the prompt to
+# keep the token).
 set -euo pipefail
 owner="${SUDO_USER:?Run this with sudo, as yourself.}"
 owner_home="$(getent passwd "$owner" | cut -d: -f6)"
 here="$(cd "$(dirname "$0")" && pwd)"
 checkout="$(cd "$here/../.." && pwd)"
 root=/srv/lane-reports
+share=/usr/local/share/lane-reports
 user=lane-reports
 
 # What it needs, checked before anything changes.
-command -v setfacl >/dev/null || { echo "setfacl is missing: sudo apt install acl, then run this again." >&2; exit 1; }
 command -v node >/dev/null || { echo "node is missing for root: install Node.js system-wide, then run this again." >&2; exit 1; }
 [[ -x "$(readlink -f "$owner_home/.local/bin/claude")" ]] || { echo "Claude Code is not in $owner_home/.local/bin/claude." >&2; exit 1; }
-[[ -f "$checkout/node_modules/playwright-core/browsers.json" ]] || { echo "Run npm ci in $checkout first." >&2; exit 1; }
+[[ -f "$checkout/node_modules/@playwright/test/package.json" ]] || { echo "Run npm ci in $checkout first." >&2; exit 1; }
+missing=()
+command -v setfacl >/dev/null || missing+=(acl)
+command -v podman >/dev/null || missing+=(podman)
+command -v slirp4netns >/dev/null || missing+=(slirp4netns)
+command -v newuidmap >/dev/null || missing+=(uidmap)
+if ((${#missing[@]})); then
+  echo "Installing ${missing[*]}…"
+  apt-get update -qq
+  DEBIAN_FRONTEND=noninteractive apt-get install -y -qq "${missing[@]}" >/dev/null
+fi
 
 # On WSL, every Linux user can open the Windows drives (/mnt/c), and through
 # them start Windows programs, which run as your Windows account. Mounted
@@ -54,9 +70,15 @@ if grep -qi microsoft /proc/version 2>/dev/null; then
 fi
 
 id "$user" >/dev/null 2>&1 || useradd --system --home-dir "$root/home" --no-create-home --shell /usr/sbin/nologin "$user"
+# Rootless Podman maps the container's users onto a range of its own, after
+# every range already given out.
+if ! grep -q "^$user:" /etc/subuid || ! grep -q "^$user:" /etc/subgid; then
+  start=$(awk -F: '{ end = $2 + $3; if (end > max) max = end } END { print (max > 165536 ? max : 165536) }' /etc/subuid /etc/subgid)
+  usermod --add-subuids "$start-$((start + 65535))" --add-subgids "$start-$((start + 65535))" "$user"
+fi
 
 install -d -o root -g root -m 0755 "$root"
-install -d -o "$user" -g "$user" -m 0700 "$root/home" "$root/checkout"
+install -d -o "$user" -g "$user" -m 0700 "$root/home" "$root/run" "$root/npm-cache"
 # The inbox is yours; it may only read it.
 install -d -o "$owner" -g "$owner" -m 0750 "$root/inbox"
 setfacl -m u:"$user":rx "$root/inbox"
@@ -65,24 +87,23 @@ setfacl -d -m u:"$user":rx,u:"$owner":rwx "$root/inbox"
 install -d -o "$user" -g "$user" -m 0750 "$root/outbox"
 setfacl -m u:"$owner":rx "$root/outbox"
 setfacl -d -m u:"$owner":rx,u:"$user":rwx "$root/outbox"
+# The earlier setup's own clone and browsers: the container has its own.
+rm -rf "$root/checkout" "$root/browsers"
 
-# Its clone of the public repository, over HTTPS without a sign-in: it can
-# fetch, never push.
-remote="https://github.com/$(git -C "$checkout" remote get-url origin | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##').git"
-if [[ ! -d "$root/checkout/.git" ]]; then
-  sudo -u "$user" env -i PATH=/usr/bin:/bin HOME="$root/home" git clone -q "$remote" "$root/checkout"
+as_user() { sudo -u "$user" env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" XDG_RUNTIME_DIR="$root/run" LANG=C.UTF-8 "$@"; }
+# Podman without a login session: cgroups it manages itself, events to a file.
+install -d -o "$user" -g "$user" -m 0700 "$root/home/.config" "$root/home/.config/containers"
+printf '[engine]\ncgroup_manager = "cgroupfs"\nevents_logger = "file"\n' > "$root/home/.config/containers/containers.conf"
+chown "$user:$user" "$root/home/.config/containers/containers.conf"
+as_user podman system migrate >/dev/null 2>&1 || true
+
+# The image: Playwright's own for the version this repository pins, with git.
+playwright="$(node -p 'require(process.argv[1]).version' "$checkout/node_modules/@playwright/test/package.json")"
+image="localhost/lane-reports:$playwright"
+if ! as_user podman image exists "$image"; then
+  echo "Building the session's image (Playwright $playwright); the first time downloads about 2 GB…"
+  as_user podman build -q --build-arg PLAYWRIGHT="$playwright" -t "$image" -f "$here/Containerfile" "$here" >/dev/null
 fi
-sudo -u "$user" env -i PATH=/usr/bin:/bin HOME="$root/home" git -C "$root/checkout" remote set-url origin "$remote"
-sudo -u "$user" env -i PATH=/usr/bin:/bin HOME="$root/home" git -C "$root/checkout" config user.name "lane-reports"
-sudo -u "$user" env -i PATH=/usr/bin:/bin HOME="$root/home" git -C "$root/checkout" config user.email "lane-reports@localhost"
-
-# The Playwright browsers this repository's tests use.
-install -d -o root -g root -m 0755 "$root/browsers"
-for build in $(node -e 'const b=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));console.log(b.browsers.filter(x=>/^(chromium|chromium-headless-shell|ffmpeg)$/.test(x.name)).map(x=>x.name.replaceAll("-","_")+"-"+x.revision).join(" "))' "$checkout/node_modules/playwright-core/browsers.json"); do
-  [[ -d "$root/browsers/$build" ]] || cp -a "$owner_home/.cache/ms-playwright/$build" "$root/browsers/$build"
-done
-chown -R root:root "$root/browsers"
-chmod -R a+rX,go-w "$root/browsers"
 
 # Claude Code, the version you run.
 install -d -o root -g root -m 0755 /opt/lane-reports
@@ -101,9 +122,15 @@ if [[ -n "$token" ]]; then
 fi
 [[ -s "$root/home/.claude-token" ]] || { echo "No token yet: run claude setup-token, then this again." >&2; exit 1; }
 
-# The session's command and instructions, and the one thing you may run as it.
-install -d -o root -g root -m 0755 /usr/local/share/lane-reports
-install -o root -g root -m 0644 "$here/PROMPT.md" /usr/local/share/lane-reports/PROMPT.md
+# The session's command, its instructions, what runs in the container, and
+# the one thing you may run as lane-reports.
+remote="https://github.com/$(git -C "$checkout" remote get-url origin | sed -E 's#^(https://github.com/|git@github.com:)##; s#\.git$##').git"
+install -d -o root -g root -m 0755 "$share"
+install -o root -g root -m 0644 "$here/PROMPT.md" "$share/PROMPT.md"
+install -o root -g root -m 0644 "$here/inside.sh" "$share/inside.sh"
+printf '%s\n' "$image" > "$share/image"
+printf '%s\n' "$remote" > "$share/repository"
+chmod 0644 "$share/image" "$share/repository"
 install -o root -g root -m 0755 "$here/lane-reports-agent" /usr/local/bin/lane-reports-agent
 rule="$owner ALL=($user) NOPASSWD: /usr/local/bin/lane-reports-agent"
 printf '%s\n' "$rule" > /etc/sudoers.d/lane-reports.tmp
@@ -111,10 +138,6 @@ chmod 0440 /etc/sudoers.d/lane-reports.tmp
 visudo -cf /etc/sudoers.d/lane-reports.tmp >/dev/null
 mv /etc/sudoers.d/lane-reports.tmp /etc/sudoers.d/lane-reports
 
-# Its dependencies, installed once now (later runs reinstall them when the
-# lock file changes).
-sudo -u "$user" env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" bash -c "cd '$root/checkout' && npm ci --no-audit --no-fund --loglevel=error && sha256sum package-lock.json | cut -d' ' -f1 > node_modules/.lane-lock"
-
-echo "The isolated session is ready. Try it: sudo -n -u $user /usr/local/bin/lane-reports-agent --check"
+echo "The isolated session is ready. Check it: sudo -n -u $user /usr/local/bin/lane-reports-agent --check"
 grep -qi microsoft /proc/version 2>/dev/null && ! grep -Eq "umask=0?77" /proc/mounts && echo "On WSL, run 'wsl --shutdown' from Windows first, so the Windows drives are mounted for you alone."
 true

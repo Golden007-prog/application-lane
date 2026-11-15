@@ -1,94 +1,112 @@
 #!/bin/bash
-# Works on one report shared on GitHub, as the lane-reports user, in a
-# session that holds nothing worth taking: its own clone of the public
-# repository, no GitHub sign-in, no access to the applicant's home (their
-# profile, documents, applications, GitHub and Claude sign-ins).
+# Works on one report shared on GitHub in a container, started by the
+# lane-reports user with rootless Podman. Two layers keep it from the
+# applicant's things:
+# - the container: its own filesystem (a fresh clone of the public
+#   repository each run), its own process list, and its own network, from
+#   which the computer's localhost (the backend, other local services) cannot
+#   be reached; it has no GitHub sign-in;
+# - lane-reports, the user that starts it: it cannot read the applicant's
+#   home or, on WSL, the Windows drives (setup.sh), so even a way out of the
+#   container finds nothing of theirs.
 # Installed by setup.sh as /usr/local/bin/lane-reports-agent (root-owned),
 # the only command sudoers lets the applicant start as lane-reports:
 #
+#   sudo -n -u lane-reports /usr/local/bin/lane-reports-agent --check
 #   sudo -n -u lane-reports /usr/local/bin/lane-reports-agent <issue number> [sonnet|opus]
 #
 # It reads <root>/inbox/<n>/report.json (written by github-reports work) and
 # leaves in <root>/outbox/<n>/:
 #   summary.json   the agent's verdict, title and description
-#   fix.patch      its changes, under src/ and tests/ only, as git diff writes them
-#   agent.log      what the agent printed
+#   fix.patch      its changes under src/ and tests/, as git diff writes them
+#   agent.log      what the agent printed; setup.log, the clone and install
 #   exit           its exit status
 # Nothing here pushes or posts: github-reports work checks the patch and
 # opens the pull request itself.
 set -euo pipefail
 root=/srv/lane-reports
+share=/usr/local/share/lane-reports
 number="${1:-}"
 model="${2:-sonnet}"
 [[ "$(id -un)" == lane-reports ]] || { echo "lane-reports-agent: run it as lane-reports" >&2; exit 2; }
-# Whether the session can run, without working on anything: what it cannot
-# reach, its clone, its Claude Code and its token.
+[[ -s "$root/home/.claude-token" ]] || { echo "lane-reports-agent: no Claude token; run setup.sh again" >&2; exit 2; }
+image="$(cat "$share/image")"
+
+# Podman as lane-reports, with nothing of the caller's environment.
+podman_env=(env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" XDG_RUNTIME_DIR="$root/run" LANG=C.UTF-8)
+umask 077
+# The token reaches the container through a file only it and lane-reports
+# read, never a command line (which every user can list).
+envfile="$root/run/agent.env"
+printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$(cat "$root/home/.claude-token")" >"$envfile"
+trap 'rm -f "$envfile"' EXIT
+container() {
+  local outbox="$1" inbox="$2"
+  shift 2
+  # --timeout: a session is stopped after 50 minutes, by Podman itself.
+  "${podman_env[@]}" podman run --rm -i --timeout 3000 \
+    --network slirp4netns:allow_host_loopback=false \
+    --userns keep-id --user "$(id -u):$(id -g)" \
+    --cap-drop all --security-opt no-new-privileges \
+    --pids-limit 4096 --shm-size 1g \
+    --env-file "$envfile" \
+    -e HOME=/home/agent -e LANG=C.UTF-8 -e CI=1 -e JOB_APPLIER_DIR=/nonexistent \
+    -e LANE_EXTENSION_DIR=dist/extension-test -e LANE_DEV_TOOLS=0 \
+    --tmpfs /home/agent:rw,exec,size=8g,uid="$(id -u)",gid="$(id -g)",mode=0700 \
+    -v "$root/npm-cache:/home/agent/.npm:rw" \
+    -v /opt/lane-reports/claude:/usr/local/bin/claude:ro \
+    -v "$share:/lane:ro" \
+    -v "$inbox:/inbox:ro" \
+    -v "$outbox:/outbox:rw" \
+    -w /home/agent \
+    "$image" bash /lane/inside.sh "$@"
+}
+
+# Whether the session can run, without working on anything.
 if [[ "$number" == --check ]]; then
+  fail() { echo "FAIL: $*" >&2; exit 1; }
   for private in /home/*/.local /home/*/.config/gh /home/*/.claude; do
-    [[ -e "$private" && -r "$private" ]] && { echo "FAIL: it can read $private" >&2; exit 1; }
+    [[ -e "$private" && -r "$private" ]] && fail "lane-reports can read $private"
   done
   # On WSL: the Windows drives, and through them the Windows programs, which
   # would run as the applicant's Windows account. Closed by setup.sh's
   # [automount] umask in /etc/wsl.conf, after wsl --shutdown.
   while read -r _ mountpoint type options _; do
     [[ "$type" == 9p || "$type" == drvfs ]] && [[ "$options" == *drvfs* || "$type" == drvfs ]] || continue
-    if [[ -r "$mountpoint" || -x "$mountpoint" ]]; then
-      echo "FAIL: it can open the Windows drive at $mountpoint (run setup.sh again, then wsl --shutdown from Windows)" >&2
-      exit 1
-    fi
+    [[ -r "$mountpoint" || -x "$mountpoint" ]] && fail "lane-reports can open the Windows drive at $mountpoint (run setup.sh again, then wsl --shutdown from Windows)"
   done </proc/mounts
   for program in /mnt/*/Windows/System32/cmd.exe /mnt/*/Windows/System32/WindowsPowerShell/v1.0/powershell.exe; do
-    [[ -e "$program" ]] && { echo "FAIL: it can reach $program, which runs as the Windows account" >&2; exit 1; }
+    [[ -e "$program" ]] && fail "lane-reports can reach $program, which runs as the Windows account"
   done
-  if command -v cmd.exe >/dev/null 2>&1 || command -v powershell.exe >/dev/null 2>&1; then
-    echo "FAIL: it can find a Windows program on its PATH" >&2
-    exit 1
-  fi
-  [[ -d "$root/checkout/.git" ]] || { echo "FAIL: no clone in $root/checkout" >&2; exit 1; }
-  env -i PATH=/usr/bin:/bin HOME="$root/home" git -C "$root/checkout" ls-remote -q origin main >/dev/null || { echo "FAIL: cannot fetch the repository" >&2; exit 1; }
-  [[ -s "$root/home/.claude-token" ]] || { echo "FAIL: no Claude token" >&2; exit 1; }
-  answer="$(printf 'Reply with the single word ready.' | timeout 120 env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" LANG=C.UTF-8 CLAUDE_CODE_OAUTH_TOKEN="$(cat "$root/home/.claude-token")" /opt/lane-reports/claude -p --model sonnet 2>&1 || true)"
-  [[ "$answer" == *ready* ]] || { echo "FAIL: Claude Code did not answer: ${answer:0:200}" >&2; exit 1; }
-  echo "OK: isolated, with its clone, Claude Code and token."
+  # A stand-in for the backend: a service on this computer's localhost,
+  # which the container must not reach by any address.
+  probe_out="$root/run/probe.port"
+  rm -f "$probe_out"
+  node -e '
+    const server = require("net").createServer((socket) => socket.end("reached"));
+    server.listen(0, "127.0.0.1", () => require("fs").writeFileSync(process.argv[1], String(server.address().port)));
+    setTimeout(() => process.exit(0), 240000);
+  ' "$probe_out" &
+  probe=$!
+  trap 'kill "$probe" 2>/dev/null; rm -f "$envfile"' EXIT
+  for _ in $(seq 50); do [[ -s "$probe_out" ]] && break; sleep 0.1; done
+  [[ -s "$probe_out" ]] || fail "could not start the localhost probe"
+  empty="$root/run/check"
+  rm -rf "$empty" && mkdir -p "$empty/in" "$empty/out"
+  # shellcheck disable=SC2046
+  container "$empty/out" "$empty/in" check "$(cat "$probe_out")" $(hostname -I 2>/dev/null) </dev/null || exit 1
+  echo "OK: the container cannot reach this computer's localhost, its processes or its files, and Claude Code answers in it; lane-reports cannot read your home or the Windows drives."
   exit 0
 fi
+
 [[ "$number" =~ ^[0-9]{1,7}$ ]] || { echo "lane-reports-agent: bad issue number" >&2; exit 2; }
 [[ "$model" =~ ^(sonnet|opus)$ ]] || { echo "lane-reports-agent: bad model" >&2; exit 2; }
 inbox="$root/inbox/$number"
 outbox="$root/outbox/$number"
 [[ -f "$inbox/report.json" ]] || { echo "lane-reports-agent: no report for #$number" >&2; exit 2; }
-[[ -s "$root/home/.claude-token" ]] || { echo "lane-reports-agent: no Claude token; run setup.sh again" >&2; exit 2; }
-
-clean_env=(env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" LANG=C.UTF-8 GIT_TERMINAL_PROMPT=0)
 umask 027
 rm -rf "$outbox"
 mkdir -p "$outbox"
-
-# A fresh copy of main: whatever an earlier session left is gone.
-cd "$root/checkout"
-"${clean_env[@]}" git fetch -q origin main
-"${clean_env[@]}" git reset -q --hard origin/main
-"${clean_env[@]}" git clean -qfdx -e node_modules
-lock="$(sha256sum package-lock.json | cut -d' ' -f1)"
-if [[ "$(cat node_modules/.lane-lock 2>/dev/null)" != "$lock" ]]; then
-  "${clean_env[@]}" npm ci --no-audit --no-fund --loglevel=error >"$outbox/npm.log" 2>&1
-  echo "$lock" >node_modules/.lane-lock
-fi
-
-prompt="$(sed "s/{{ISSUE}}/$number/g" /usr/local/share/lane-reports/PROMPT.md)"
 status=0
-printf '%s\n' "$prompt" | timeout --signal=TERM --kill-after=15s 45m "${clean_env[@]}" \
-  CLAUDE_CODE_OAUTH_TOKEN="$(cat "$root/home/.claude-token")" \
-  PLAYWRIGHT_BROWSERS_PATH="$root/browsers" \
-  CI=1 \
-  JOB_APPLIER_DIR=/nonexistent \
-  LANE_EXTENSION_DIR=dist/extension-test \
-  LANE_DEV_TOOLS=0 \
-  /opt/lane-reports/claude -p --model "$model" --dangerously-skip-permissions \
-    --add-dir "$inbox" --add-dir "$outbox" \
-  >"$outbox/agent.log" 2>&1 || status=$?
-
-# The patch: what changed under src/ and tests/, new files included.
-"${clean_env[@]}" git add -A -N -- src tests
-"${clean_env[@]}" git diff --no-color --no-ext-diff --binary HEAD -- src tests >"$outbox/fix.patch"
-echo "$status" >"$outbox/exit"
+sed "s/{{ISSUE}}/$number/g" "$share/PROMPT.md" | container "$outbox" "$inbox" work "$number" "$model" || status=$?
+[[ -s "$outbox/exit" ]] || echo "$status" >"$outbox/exit"

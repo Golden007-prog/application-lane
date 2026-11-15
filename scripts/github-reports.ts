@@ -15,7 +15,8 @@
 // - The pages in a report are saved with their scripts, event handlers,
 //   frames and script links renamed so that none of them can run.
 // - The report is worked on in an isolated session (scripts/report-sandbox):
-//   another user, without this computer's data or a GitHub sign-in. Its
+//   a container started by another user, without this computer's data, its
+//   localhost or a GitHub sign-in. Its
 //   patch, kept only if it changes ordinary files under src/ and tests/,
 //   goes to its own branch and a pull request for a maintainer to review;
 //   .githooks/pre-push refuses a fix for an issue pushed to main.
@@ -30,7 +31,7 @@
 // Needs the GitHub CLI (gh), signed in: it reads the issues and posts replies.
 
 import { execFileSync } from "node:child_process";
-import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
+import { lstat, mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { z } from "zod";
@@ -463,6 +464,17 @@ function openPullRequest(number: number, patchFile: string, summary: ReturnType<
 }
 const SANDBOX_TMP = () => process.env.TMPDIR || "/tmp";
 
+// A file the isolated session left, read only if it is an ordinary file
+// there: a link it planted could point at one of yours, which this reads as
+// you. Missing: "".
+export async function outboxFile(path: string, limit = PATCH_LIMIT): Promise<string> {
+  const stat = await lstat(path).catch(() => undefined);
+  if (!stat) return "";
+  if (!stat.isFile()) throw new Error(`${path} is not an ordinary file; nothing was read from it.`);
+  if (stat.size > limit) throw new Error(`${path} is larger than expected; nothing was read from it.`);
+  return readFile(path, "utf8");
+}
+
 // One accepted report worked on in the isolated session, start to end. What
 // it prints is this tool's own words, the files changed and the pull
 // request's address: never text the session wrote, which came from the report.
@@ -484,13 +496,15 @@ async function work(number: number, model: string) {
     throw new Error(`The isolated session did not finish (${(error as Error).message.split("\n")[0]}). Its log: ${outbox}/agent.log`);
   }
   const minutes = Math.round((Date.now() - started) / 60_000);
-  const summaryText = await readFile(join(outbox, "summary.json"), "utf8").catch(() => "");
+  const folderStat = await lstat(outbox).catch(() => undefined);
+  if (!folderStat?.isDirectory()) throw new Error(`${outbox} is not an ordinary folder; nothing was read from it.`);
+  const summaryText = await outboxFile(join(outbox, "summary.json"), 64 * 1024);
   if (!summaryText) {
     await mark(number, "new", { note: "The isolated session left no verdict." });
     throw new Error(`The isolated session left no verdict after ${minutes} min. Its log: ${outbox}/agent.log`);
   }
   const summary = checkSummary(summaryText);
-  const patch = await readFile(join(outbox, "fix.patch"), "utf8");
+  const patch = await outboxFile(join(outbox, "fix.patch"));
   const files = patch.trim() ? checkPatch(patch) : [];
   if (summary.verdict !== "fixed") {
     await mark(number, summary.verdict, { note: `The isolated session found it ${summary.verdict} (${minutes} min); its reasons: ${outbox}/summary.json` });

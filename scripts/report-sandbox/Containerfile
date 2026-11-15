@@ -1,0 +1,8 @@
+# The isolated session's image: Playwright's own (Node, and the browsers this
+# repository's tests use), with git. setup.sh builds it as lane-reports, with
+# the Playwright version the repository pins.
+ARG PLAYWRIGHT
+FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT}-noble
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends git ca-certificates \
+ && rm -rf /var/lib/apt/lists/*

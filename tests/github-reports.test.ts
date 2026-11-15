@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, readFile } from "node:fs/promises";
+import { mkdtemp, readFile, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -8,6 +8,7 @@ import {
   attachedReports,
   checkPatch,
   checkSummary,
+  outboxFile,
   checkReply,
   checkReport,
   formSections,
@@ -212,4 +213,18 @@ test("the isolated session's verdict is read only in its expected shape", () => 
   assert.throws(() => checkSummary("not json"), /not JSON/);
   assert.throws(() => checkSummary(JSON.stringify({ verdict: "merged", title: "x", description: "" })), /expected shape/);
   assert.throws(() => checkSummary(JSON.stringify({ verdict: "fixed", title: "x".repeat(101), description: "" })), /expected shape/);
+});
+
+test("only ordinary files are read from the isolated session's outbox", async () => {
+  const outbox = await mkdtemp(join(tmpdir(), "lane-outbox-"));
+  await writeFile(join(outbox, "summary.json"), "{}");
+  assert.equal(await outboxFile(join(outbox, "summary.json")), "{}");
+  assert.equal(await outboxFile(join(outbox, "missing.json")), "");
+  // A link it planted, to a file of the applicant's.
+  const theirs = join(outbox, "..", `private-${Date.now()}.json`);
+  await writeFile(theirs, "secret");
+  await symlink(theirs, join(outbox, "fix.patch"));
+  await assert.rejects(outboxFile(join(outbox, "fix.patch")), /not an ordinary file/);
+  await writeFile(join(outbox, "big.json"), "x".repeat(100));
+  await assert.rejects(outboxFile(join(outbox, "big.json"), 10), /larger than expected/);
 });
