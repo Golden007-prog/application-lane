@@ -31,6 +31,8 @@ model="${2:-sonnet}"
 [[ "$(id -un)" == lane-reports ]] || { echo "lane-reports-agent: run it as lane-reports" >&2; exit 2; }
 [[ -s "$root/home/.claude-token" ]] || { echo "lane-reports-agent: no Claude token; run setup.sh again" >&2; exit 2; }
 image="$(cat "$share/image")"
+# Started from the caller's folder, which lane-reports may not enter.
+cd "$root"
 
 # Podman as lane-reports, with nothing of the caller's environment.
 podman_env=(env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" XDG_RUNTIME_DIR="$root/run" LANG=C.UTF-8)

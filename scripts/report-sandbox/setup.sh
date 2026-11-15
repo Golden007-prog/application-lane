@@ -38,6 +38,9 @@ checkout="$(cd "$here/../.." && pwd)"
 root=/srv/lane-reports
 share=/usr/local/share/lane-reports
 user=lane-reports
+# Commands run as lane-reports start in the current folder, and it may not
+# enter yours.
+cd /
 
 # What it needs, checked before anything changes.
 command -v node >/dev/null || { echo "node is missing for root: install Node.js system-wide, then run this again." >&2; exit 1; }
@@ -100,9 +103,12 @@ as_user podman system migrate >/dev/null 2>&1 || true
 # The image: Playwright's own for the version this repository pins, with git.
 playwright="$(node -p 'require(process.argv[1]).version' "$checkout/node_modules/@playwright/test/package.json")"
 image="localhost/lane-reports:$playwright"
+# Built from a copy where lane-reports can read it (it cannot read your checkout).
+install -d -o root -g root -m 0755 "$share"
+install -o root -g root -m 0644 "$here/Containerfile" "$share/Containerfile"
 if ! as_user podman image exists "$image"; then
   echo "Building the session's image (Playwright $playwright); the first time downloads about 2 GB…"
-  as_user podman build -q --build-arg PLAYWRIGHT="$playwright" -t "$image" -f "$here/Containerfile" "$here" >/dev/null
+  as_user podman build -q --build-arg PLAYWRIGHT="$playwright" -t "$image" -f "$share/Containerfile" "$share" >/dev/null
 fi
 
 # Claude Code, the version you run.
