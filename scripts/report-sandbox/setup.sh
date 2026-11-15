@@ -38,6 +38,21 @@ command -v node >/dev/null || { echo "node is missing for root: install Node.js 
 [[ -x "$(readlink -f "$owner_home/.local/bin/claude")" ]] || { echo "Claude Code is not in $owner_home/.local/bin/claude." >&2; exit 1; }
 [[ -f "$checkout/node_modules/playwright-core/browsers.json" ]] || { echo "Run npm ci in $checkout first." >&2; exit 1; }
 
+# On WSL, every Linux user can open the Windows drives (/mnt/c), and through
+# them start Windows programs, which run as your Windows account. Mounted
+# with umask 077 they are yours alone; this takes effect after
+# `wsl --shutdown` (from Windows), and changes nothing for you or Windows.
+if grep -qi microsoft /proc/version 2>/dev/null; then
+  conf=/etc/wsl.conf
+  if ! grep -q '^\[automount\]' "$conf" 2>/dev/null; then
+    printf '\n[automount]\n# Windows drives for your own user only (scripts/report-sandbox/setup.sh).\noptions = "umask=077,fmask=077"\n' >> "$conf"
+    echo "Added [automount] umask=077 to $conf. Run 'wsl --shutdown' from Windows, reopen WSL, then run the check."
+  elif ! grep -Eq '^\s*options\s*=.*umask=0?77' "$conf"; then
+    echo "$conf has an [automount] section without umask=077. Add umask=077,fmask=077 to its options, run 'wsl --shutdown' from Windows, then run this again." >&2
+    exit 1
+  fi
+fi
+
 id "$user" >/dev/null 2>&1 || useradd --system --home-dir "$root/home" --no-create-home --shell /usr/sbin/nologin "$user"
 
 install -d -o root -g root -m 0755 "$root"
@@ -101,3 +116,5 @@ mv /etc/sudoers.d/lane-reports.tmp /etc/sudoers.d/lane-reports
 sudo -u "$user" env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" bash -c "cd '$root/checkout' && npm ci --no-audit --no-fund --loglevel=error && sha256sum package-lock.json | cut -d' ' -f1 > node_modules/.lane-lock"
 
 echo "The isolated session is ready. Try it: sudo -n -u $user /usr/local/bin/lane-reports-agent --check"
+grep -qi microsoft /proc/version 2>/dev/null && ! grep -Eq "umask=0?77" /proc/mounts && echo "On WSL, run 'wsl --shutdown' from Windows first, so the Windows drives are mounted for you alone."
+true

@@ -27,6 +27,23 @@ if [[ "$number" == --check ]]; then
   for private in /home/*/.local /home/*/.config/gh /home/*/.claude; do
     [[ -e "$private" && -r "$private" ]] && { echo "FAIL: it can read $private" >&2; exit 1; }
   done
+  # On WSL: the Windows drives, and through them the Windows programs, which
+  # would run as the applicant's Windows account. Closed by setup.sh's
+  # [automount] umask in /etc/wsl.conf, after wsl --shutdown.
+  while read -r _ mountpoint type options _; do
+    [[ "$type" == 9p || "$type" == drvfs ]] && [[ "$options" == *drvfs* || "$type" == drvfs ]] || continue
+    if [[ -r "$mountpoint" || -x "$mountpoint" ]]; then
+      echo "FAIL: it can open the Windows drive at $mountpoint (run setup.sh again, then wsl --shutdown from Windows)" >&2
+      exit 1
+    fi
+  done </proc/mounts
+  for program in /mnt/*/Windows/System32/cmd.exe /mnt/*/Windows/System32/WindowsPowerShell/v1.0/powershell.exe; do
+    [[ -e "$program" ]] && { echo "FAIL: it can reach $program, which runs as the Windows account" >&2; exit 1; }
+  done
+  if command -v cmd.exe >/dev/null 2>&1 || command -v powershell.exe >/dev/null 2>&1; then
+    echo "FAIL: it can find a Windows program on its PATH" >&2
+    exit 1
+  fi
   [[ -d "$root/checkout/.git" ]] || { echo "FAIL: no clone in $root/checkout" >&2; exit 1; }
   env -i PATH=/usr/bin:/bin HOME="$root/home" git -C "$root/checkout" ls-remote -q origin main >/dev/null || { echo "FAIL: cannot fetch the repository" >&2; exit 1; }
   [[ -s "$root/home/.claude-token" ]] || { echo "FAIL: no Claude token" >&2; exit 1; }
