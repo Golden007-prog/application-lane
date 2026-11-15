@@ -146,7 +146,8 @@ export function collectTerms({ profile = {}, applications = [], extra = [], allo
 
 const escape = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-function matcher({ term, cased, digits, named }) {
+// The pattern a term is looked for with; report cleaning (src/server/clean-report.ts) replaces what it matches.
+export function matcher({ term, cased, digits, named }) {
   if (named) {
     const word = escape(term.toLowerCase());
     // As written too when that has capitals of its own (iCIMS), never all lower case.
