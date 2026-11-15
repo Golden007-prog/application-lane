@@ -7,7 +7,7 @@ The report is `/inbox/report.json`. `issue` holds the issue form's summary and "
 Your task:
 
 1. Read `docs/architecture.md` and `docs/development.md`. Find what the extension did wrong on this page, from the page's markup and the fields it observed. The site configs are in `src/engine/config/sites/`, the matching in `src/shared/`, the filling in `src/extension/content.ts` and `src/engine/config/interpreter.ts`.
-2. Write a test that reproduces it, in the style of the tests next to it: a browser test in `tests/browser/extension.spec.ts` built from the captured markup's structure (its elements, classes, attributes and labels, without scripts), or a unit test in `tests/`. Use neutral names (Alex Rivera, Acme, Contoso, Penn State, Virginia Tech). Name the job-site software, never an employer.
+2. Write a test that reproduces it, in the style of the tests next to it: a browser test in `tests/browser/extension.spec.ts` built from the captured markup's structure (its elements, classes, attributes and labels, without scripts), or a unit test in `tests/`. Use neutral names (Alex Rivera, Acme, Contoso, Penn State, Virginia Tech). Name the job-site software, never an employer: the report's company (`application.company`, and the name in the site's address) must not appear anywhere in your changes, comments included. Write "an employer's iCIMS site", not its name.
 3. Show that it fails: run it before your fix. Then fix the cause in `src/`, and show that it passes, and that the tests beside it still pass:
    - unit: `node --import tsx --test tests/<file>.test.ts`
    - browser: `npm run build && npx playwright test tests/browser/extension.spec.ts -g "<exact title>"` (the build goes to dist/extension-test)

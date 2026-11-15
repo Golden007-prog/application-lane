@@ -447,7 +447,11 @@ function openPullRequest(number: number, patchFile: string, summary: ReturnType<
   git(["fetch", "-q", "origin", "main"]);
   git(["worktree", "add", "-q", "-B", branch, worktree, "origin/main"]);
   try {
-    const inTree = (args: string[]) => execFileSync("git", ["-C", worktree, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+    // The commit and push hooks' leak check reads this computer's data folder,
+    // which it would not find from a worktree outside the checkout: without
+    // it, it skipped, and a pull request named a company applied to.
+    const inTree = (args: string[]) =>
+      execFileSync("git", ["-C", worktree, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, LANE_DATA_DIR: dataDirectory } });
     inTree(["apply", "--index", "--whitespace=nowarn", patchFile]);
     const body = `${summary.description}\n\n${summary.test ? `Test: ${summary.test}${summary.failedWithout ? " (fails without the fix)" : ""}\n\n` : ""}Fixes #${number}`;
     inTree(["commit", "-q", "-m", summary.title, "-m", body, "-m", reportTrailer(number)]);
@@ -514,7 +518,16 @@ async function work(number: number, model: string) {
     await mark(number, "new", { note: "The isolated session said fixed but changed nothing." });
     throw new Error(`#${number}: the isolated session said it was fixed but changed nothing.`);
   }
-  checkReply(`${summary.title}\n${summary.description}`, loadTerms(dataDirectory));
+  const terms = loadTerms(dataDirectory);
+  checkReply(`${summary.title}\n${summary.description}`, terms);
+  // The patch too, by this tool and not only the commit hooks: the report
+  // names the company it came from, and a session once copied it into a
+  // test's comment.
+  const named = findLeaks(patch.split("\n").map((line) => ({ where: "patch", line })), terms);
+  if (named.length) {
+    await mark(number, "new", { note: "The isolated session's patch names the applicant's details; nothing was pushed." });
+    throw new Error(`#${number}: not pushed: the patch names the applicant's details (${[...new Set(named.map((hit) => hit.kind))].join(", ")}). Its patch: ${outbox}/fix.patch`);
+  }
   const patchFile = join(SANDBOX_TMP(), `lane-report-${number}.patch`);
   await writeFile(patchFile, patch);
   const { commit, url } = openPullRequest(number, patchFile, summary);
