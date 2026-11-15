@@ -9,6 +9,7 @@ body:
         The extension replaces your name, contact details, address, schools, employers, references and the
         other companies you applied to with made-up ones. It also leaves out the network log, the recording
         and your screenshots. Look the summary over before you submit: this issue is public.
+        A maintainer reads each report before work on it starts.
   - type: textarea
     id: summary
     attributes:

@@ -2,4 +2,9 @@
 # Refuses a push carrying the applicant's own details in any commit's changes,
 # message or author (scripts/leak-check.mjs). This runs even for commits made
 # without the commit hooks (git commit-tree, --no-verify).
-exec node "$(git rev-parse --show-toplevel)/scripts/leak-check.mjs" --push
+# Before that, refuses a fix for a GitHub issue pushed to main: those go
+# through a pull request (scripts/report-push-check.mjs).
+root="$(git rev-parse --show-toplevel)"
+refs="$(cat)"
+printf '%s\n' "$refs" | node "$root/scripts/report-push-check.mjs" || exit 1
+printf '%s\n' "$refs" | exec node "$root/scripts/leak-check.mjs" --push
