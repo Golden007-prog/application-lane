@@ -32,6 +32,12 @@ checkout="$(cd "$here/../.." && pwd)"
 root=/srv/lane-reports
 user=lane-reports
 
+# What it needs, checked before anything changes.
+command -v setfacl >/dev/null || { echo "setfacl is missing: sudo apt install acl, then run this again." >&2; exit 1; }
+command -v node >/dev/null || { echo "node is missing for root: install Node.js system-wide, then run this again." >&2; exit 1; }
+[[ -x "$(readlink -f "$owner_home/.local/bin/claude")" ]] || { echo "Claude Code is not in $owner_home/.local/bin/claude." >&2; exit 1; }
+[[ -f "$checkout/node_modules/playwright-core/browsers.json" ]] || { echo "Run npm ci in $checkout first." >&2; exit 1; }
+
 id "$user" >/dev/null 2>&1 || useradd --system --home-dir "$root/home" --no-create-home --shell /usr/sbin/nologin "$user"
 
 install -d -o root -g root -m 0755 "$root"
