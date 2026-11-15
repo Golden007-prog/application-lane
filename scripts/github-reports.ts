@@ -5,7 +5,7 @@
 //   npm run github-reports -- sync [--quiet]   fetch accepted "fill report" issues and their reports
 //   npm run github-reports -- list [--json]    the issues seen, and where each stands
 //   npm run github-reports -- mark <n> <state> [--commit <sha>] [--note "<text>"]
-//   npm run github-reports -- pr <n> "<title>" ["<description>"]
+//   npm run github-reports -- work <n> [--model sonnet|opus]
 //   npm run github-reports -- reply <n> "<text>" [--close]
 //
 // Anyone can open an issue, so nothing here trusts one:
@@ -14,8 +14,11 @@
 //   attached file for another).
 // - The pages in a report are saved with their scripts, event handlers,
 //   frames and script links renamed so that none of them can run.
-// - A fix goes to its own branch and a pull request for a maintainer to
-//   review; .githooks/pre-push refuses one pushed to main.
+// - The report is worked on in an isolated session (scripts/report-sandbox):
+//   another user, without this computer's data or a GitHub sign-in. Its
+//   patch, kept only if it changes ordinary files under src/ and tests/,
+//   goes to its own branch and a pull request for a maintainer to review;
+//   .githooks/pre-push refuses a fix for an issue pushed to main.
 // - A reply is posted only if the leak check finds none of this computer's
 //   applicant's details in it, and no path on this computer.
 //
@@ -384,31 +387,125 @@ export async function mark(number: number, next: IssueState, details: { commit?:
 // keeps such commits off main (scripts/report-push-check.mjs).
 export const reportTrailer = (number: number) => `GitHub-Report: #${number}`;
 
-// The staged changes, committed on a branch of their own and offered as a
-// pull request; the checkout is back on the branch it was on.
-async function pullRequest(number: number, title: string, description: string) {
+// The isolated session (scripts/report-sandbox): its work area, and the one
+// command this user may start as it.
+export const SANDBOX = "/srv/lane-reports";
+const AGENT = "/usr/local/bin/lane-reports-agent";
+const PATCH_LIMIT = 2 * 1024 * 1024;
+
+// The files a patch from the isolated session changes, if it changes only
+// ordinary files under src/ and tests/: nothing else of the repository (its
+// hooks, workflows, scripts or dependencies), no binary file, no link, no
+// file made executable.
+export function checkPatch(patch: string): string[] {
+  if (patch.length > PATCH_LIMIT) throw new Error("The patch is larger than 2 MB.");
+  const files = new Set<string>();
+  const allowed = (path: string) => /^(?:src|tests)\/[\w@+.-]+(?:\/[\w@+.-]+)*$/.test(path) && !path.split("/").includes("..");
+  for (const line of patch.split("\n")) {
+    const header = line.match(/^diff --git a\/(\S+) b\/(\S+)$/);
+    if (header) {
+      for (const path of [header[1], header[2]]) if (!allowed(path)) throw new Error(`The patch changes ${oneLine(path)}, outside src/ and tests/.`);
+      files.add(header[2]);
+      continue;
+    }
+    if (line.startsWith("diff ")) throw new Error("The patch has a file header it cannot read.");
+    if (/^(?:GIT binary patch|Binary files )/.test(line)) throw new Error("The patch changes a binary file.");
+    if (/^(?:new file mode|deleted file mode|old mode|new mode) (?!100644$)/.test(line)) throw new Error("The patch adds a link, or changes a file's mode.");
+    const moved = line.match(/^(?:rename|copy) (?:from|to) (.+)$/);
+    if (moved && !allowed(moved[1])) throw new Error(`The patch moves ${oneLine(moved[1])}, outside src/ and tests/.`);
+  }
+  return [...files];
+}
+
+// The verdict the isolated session leaves beside its patch.
+const summarySchema = z.object({
+  verdict: z.enum(["fixed", "cannot-reproduce", "not-a-bug"]),
+  title: z.string().min(1).max(100),
+  description: z.string().max(1500),
+  test: z.string().max(300).optional(),
+  failedWithout: z.boolean().optional(),
+});
+export function checkSummary(text: string) {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error("The session's summary is not JSON.");
+  }
+  const result = summarySchema.safeParse(parsed);
+  if (!result.success) throw new Error(`The session's summary is not in the expected shape (${result.error.issues[0]?.path.join(".") || "shape"}).`);
+  return { ...result.data, title: oneLine(result.data.title) };
+}
+
+// The patch, on a branch of its own from main in a worktree of its own (the
+// checkout is not touched), committed with the leak check's hooks, pushed,
+// and offered as a pull request.
+function openPullRequest(number: number, patchFile: string, summary: ReturnType<typeof checkSummary>) {
+  const branch = `github-report-${number}`;
+  const worktree = join(SANDBOX_TMP(), `lane-report-${number}-${Date.now()}`);
+  git(["fetch", "-q", "origin", "main"]);
+  git(["worktree", "add", "-q", "-B", branch, worktree, "origin/main"]);
+  try {
+    const inTree = (args: string[]) => execFileSync("git", ["-C", worktree, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] });
+    inTree(["apply", "--index", "--whitespace=nowarn", patchFile]);
+    const body = `${summary.description}\n\n${summary.test ? `Test: ${summary.test}${summary.failedWithout ? " (fails without the fix)" : ""}\n\n` : ""}Fixes #${number}`;
+    inTree(["commit", "-q", "-m", summary.title, "-m", body, "-m", reportTrailer(number)]);
+    inTree(["push", "-q", "-f", "-u", "origin", branch]);
+    const commit = inTree(["rev-parse", "HEAD"]).trim();
+    const existing = gh(["pr", "list", "--repo", REPORT_REPOSITORY, "--head", branch, "--state", "open", "--json", "url", "--jq", ".[0].url"]).trim();
+    const url =
+      existing ||
+      gh(["pr", "create", "--repo", REPORT_REPOSITORY, "--base", "main", "--head", branch, "--title", summary.title, "--body", `${body}\n\nMade by the isolated session from a report shared on GitHub. **Review before merging**: the report came from outside, and this change has not been run on a live page.`]).trim();
+    return { commit, url };
+  } finally {
+    git(["worktree", "remove", "-f", worktree]);
+  }
+}
+const SANDBOX_TMP = () => process.env.TMPDIR || "/tmp";
+
+// One accepted report worked on in the isolated session, start to end. What
+// it prints is this tool's own words, the files changed and the pull
+// request's address: never text the session wrote, which came from the report.
+async function work(number: number, model: string) {
   const state = await readState();
   const tracked = state[number];
-  if (!tracked || !["new", "fixing"].includes(tracked.state)) throw new Error(`Issue #${number} is not one the fixer has taken (${tracked?.state || "not fetched"}).`);
+  if (!tracked || !["new", "fixing"].includes(tracked.state)) throw new Error(`Issue #${number} is not ready to work on (${tracked?.state || "not fetched"}).`);
+  if (!/^(sonnet|opus)$/.test(model)) throw new Error("The model is sonnet or opus.");
+  const inbox = join(SANDBOX, "inbox", String(number));
+  const outbox = join(SANDBOX, "outbox", String(number));
+  await mkdir(inbox, { recursive: true });
+  await writeFile(join(inbox, "report.json"), await readFile(join(folder(), `${number}.json`), "utf8"));
+  await mark(number, "fixing", { note: "The isolated session is working on it." });
+  const started = Date.now();
   try {
-    git(["diff", "--cached", "--quiet"]);
-    throw new Error("Nothing is staged: git add the fix and its test first.");
+    execFileSync("sudo", ["-n", "-u", "lane-reports", AGENT, String(number), model], { stdio: ["ignore", "ignore", "inherit"], timeout: 50 * 60_000 });
   } catch (error) {
-    if ((error as Error).message.startsWith("Nothing is staged")) throw error;
+    await mark(number, "new", { note: "The isolated session did not finish; see its outbox." });
+    throw new Error(`The isolated session did not finish (${(error as Error).message.split("\n")[0]}). Its log: ${outbox}/agent.log`);
   }
-  const from = git(["rev-parse", "--abbrev-ref", "HEAD"]).trim();
-  const branch = `github-report-${number}`;
-  git(["switch", "-c", branch]);
-  try {
-    git(["commit", "-q", "-m", title, "-m", `${description ? `${description}\n\n` : ""}Fixes #${number}`, "-m", reportTrailer(number)]);
-    git(["push", "-q", "-u", "origin", branch]);
-    const url = gh(["pr", "create", "--repo", REPORT_REPOSITORY, "--base", "main", "--head", branch, "--title", title, "--body", `${description ? `${description}\n\n` : ""}Fixes #${number}\n\nFrom a report shared on GitHub. Review before merging: the report came from outside.`]).trim();
-    const commit = git(["rev-parse", "HEAD"]).trim();
-    await mark(number, "pr-open", { commit, pullRequest: url });
-    return url;
-  } finally {
-    git(["switch", "-q", from]);
+  const minutes = Math.round((Date.now() - started) / 60_000);
+  const summaryText = await readFile(join(outbox, "summary.json"), "utf8").catch(() => "");
+  if (!summaryText) {
+    await mark(number, "new", { note: "The isolated session left no verdict." });
+    throw new Error(`The isolated session left no verdict after ${minutes} min. Its log: ${outbox}/agent.log`);
   }
+  const summary = checkSummary(summaryText);
+  const patch = await readFile(join(outbox, "fix.patch"), "utf8");
+  const files = patch.trim() ? checkPatch(patch) : [];
+  if (summary.verdict !== "fixed") {
+    await mark(number, summary.verdict, { note: `The isolated session found it ${summary.verdict} (${minutes} min); its reasons: ${outbox}/summary.json` });
+    return `#${number}: ${summary.verdict}, after ${minutes} min. Nothing changed. Read the session's reasons in ${outbox}/summary.json before replying.`;
+  }
+  if (!files.length) {
+    await mark(number, "new", { note: "The isolated session said fixed but changed nothing." });
+    throw new Error(`#${number}: the isolated session said it was fixed but changed nothing.`);
+  }
+  checkReply(`${summary.title}\n${summary.description}`, loadTerms(dataDirectory));
+  const patchFile = join(SANDBOX_TMP(), `lane-report-${number}.patch`);
+  await writeFile(patchFile, patch);
+  const { commit, url } = openPullRequest(number, patchFile, summary);
+  await mark(number, "pr-open", { commit, pullRequest: url, note: `Fixed by the isolated session in ${minutes} min${summary.failedWithout ? ", with a test that fails without it" : ""}; waiting for review.` });
+  return `#${number}: pull request ${url} (${files.length} file${files.length === 1 ? "" : "s"}: ${files.join(", ")}), after ${minutes} min. It waits for your review.`;
 }
 
 function option(args: string[], name: string) {
@@ -438,11 +535,10 @@ async function main(argv: string[]) {
     const result = await mark(number, next, { commit: option(args, "--commit"), note: option(args, "--note") });
     return console.log(`#${number} is ${result.state}.`);
   }
-  if (command === "pr") {
+  if (command === "work") {
     const number = Number(args[0]);
-    if (!Number.isInteger(number) || !args[1]) throw new Error('Usage: pr <n> "<title>" ["<description>"]');
-    for (const text of [args[1], args[2] || ""]) if (text) checkReply(text, loadTerms(dataDirectory));
-    return console.log(`Pull request for #${number}: ${await pullRequest(number, args[1], args[2] || "")}`);
+    if (!Number.isInteger(number)) throw new Error("Usage: work <n> [--model sonnet|opus]");
+    return console.log(await work(number, option(args, "--model") || "sonnet"));
   }
   if (command === "reply") {
     const number = Number(args[0]);
@@ -458,7 +554,7 @@ async function main(argv: string[]) {
       "npm run github-reports -- sync [--quiet]   fetch accepted fill-report issues and their reports",
       "npm run github-reports -- list [--json]    the issues seen, and where each stands",
       `npm run github-reports -- mark <n> <${states.join("|")}> [--commit <sha>] [--note "<text>"]`,
-      'npm run github-reports -- pr <n> "<title>" ["<description>"]   commit the staged fix on its own branch and open a pull request',
+      "npm run github-reports -- work <n> [--model sonnet|opus]   fix it in the isolated session, and open a pull request",
       'npm run github-reports -- reply <n> "<text>" [--close]',
     ].join("\n"),
   );

@@ -1,0 +1,77 @@
+#!/bin/bash
+# Works on one report shared on GitHub, as the lane-reports user, in a
+# session that holds nothing worth taking: its own clone of the public
+# repository, no GitHub sign-in, no access to the applicant's home (their
+# profile, documents, applications, GitHub and Claude sign-ins).
+# Installed by setup.sh as /usr/local/bin/lane-reports-agent (root-owned),
+# the only command sudoers lets the applicant start as lane-reports:
+#
+#   sudo -n -u lane-reports /usr/local/bin/lane-reports-agent <issue number> [sonnet|opus]
+#
+# It reads <root>/inbox/<n>/report.json (written by github-reports work) and
+# leaves in <root>/outbox/<n>/:
+#   summary.json   the agent's verdict, title and description
+#   fix.patch      its changes, under src/ and tests/ only, as git diff writes them
+#   agent.log      what the agent printed
+#   exit           its exit status
+# Nothing here pushes or posts: github-reports work checks the patch and
+# opens the pull request itself.
+set -euo pipefail
+root=/srv/lane-reports
+number="${1:-}"
+model="${2:-sonnet}"
+[[ "$(id -un)" == lane-reports ]] || { echo "lane-reports-agent: run it as lane-reports" >&2; exit 2; }
+# Whether the session can run, without working on anything: what it cannot
+# reach, its clone, its Claude Code and its token.
+if [[ "$number" == --check ]]; then
+  for private in /home/*/.local /home/*/.config/gh /home/*/.claude; do
+    [[ -e "$private" && -r "$private" ]] && { echo "FAIL: it can read $private" >&2; exit 1; }
+  done
+  [[ -d "$root/checkout/.git" ]] || { echo "FAIL: no clone in $root/checkout" >&2; exit 1; }
+  env -i PATH=/usr/bin:/bin HOME="$root/home" git -C "$root/checkout" ls-remote -q origin main >/dev/null || { echo "FAIL: cannot fetch the repository" >&2; exit 1; }
+  [[ -s "$root/home/.claude-token" ]] || { echo "FAIL: no Claude token" >&2; exit 1; }
+  answer="$(printf 'Reply with the single word ready.' | timeout 120 env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" LANG=C.UTF-8 CLAUDE_CODE_OAUTH_TOKEN="$(cat "$root/home/.claude-token")" /opt/lane-reports/claude -p --model sonnet 2>&1 || true)"
+  [[ "$answer" == *ready* ]] || { echo "FAIL: Claude Code did not answer: ${answer:0:200}" >&2; exit 1; }
+  echo "OK: isolated, with its clone, Claude Code and token."
+  exit 0
+fi
+[[ "$number" =~ ^[0-9]{1,7}$ ]] || { echo "lane-reports-agent: bad issue number" >&2; exit 2; }
+[[ "$model" =~ ^(sonnet|opus)$ ]] || { echo "lane-reports-agent: bad model" >&2; exit 2; }
+inbox="$root/inbox/$number"
+outbox="$root/outbox/$number"
+[[ -f "$inbox/report.json" ]] || { echo "lane-reports-agent: no report for #$number" >&2; exit 2; }
+[[ -s "$root/home/.claude-token" ]] || { echo "lane-reports-agent: no Claude token; run setup.sh again" >&2; exit 2; }
+
+clean_env=(env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" LANG=C.UTF-8 GIT_TERMINAL_PROMPT=0)
+umask 027
+rm -rf "$outbox"
+mkdir -p "$outbox"
+
+# A fresh copy of main: whatever an earlier session left is gone.
+cd "$root/checkout"
+"${clean_env[@]}" git fetch -q origin main
+"${clean_env[@]}" git reset -q --hard origin/main
+"${clean_env[@]}" git clean -qfdx -e node_modules
+lock="$(sha256sum package-lock.json | cut -d' ' -f1)"
+if [[ "$(cat node_modules/.lane-lock 2>/dev/null)" != "$lock" ]]; then
+  "${clean_env[@]}" npm ci --no-audit --no-fund --loglevel=error >"$outbox/npm.log" 2>&1
+  echo "$lock" >node_modules/.lane-lock
+fi
+
+prompt="$(sed "s/{{ISSUE}}/$number/g" /usr/local/share/lane-reports/PROMPT.md)"
+status=0
+printf '%s\n' "$prompt" | timeout --signal=TERM --kill-after=15s 45m "${clean_env[@]}" \
+  CLAUDE_CODE_OAUTH_TOKEN="$(cat "$root/home/.claude-token")" \
+  PLAYWRIGHT_BROWSERS_PATH="$root/browsers" \
+  CI=1 \
+  JOB_APPLIER_DIR=/nonexistent \
+  LANE_EXTENSION_DIR=dist/extension-test \
+  LANE_DEV_TOOLS=0 \
+  /opt/lane-reports/claude -p --model "$model" --dangerously-skip-permissions \
+    --add-dir "$inbox" --add-dir "$outbox" \
+  >"$outbox/agent.log" 2>&1 || status=$?
+
+# The patch: what changed under src/ and tests/, new files included.
+"${clean_env[@]}" git add -A -N -- src tests
+"${clean_env[@]}" git diff --no-color --no-ext-diff --binary HEAD -- src tests >"$outbox/fix.patch"
+echo "$status" >"$outbox/exit"

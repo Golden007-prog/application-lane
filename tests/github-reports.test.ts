@@ -6,6 +6,8 @@ import { join } from "node:path";
 import {
   acceptance,
   attachedReports,
+  checkPatch,
+  checkSummary,
   checkReply,
   checkReport,
   formSections,
@@ -185,4 +187,29 @@ test("sync saves each accepted issue with its report once, made inert, and notes
   assert.equal(after[7].state, "closed");
   assert.equal(after[7].pullRequest, "https://github.com/Nikman800/application-lane/pull/20");
   await assert.rejects(mark(99, "fixed", {}, data), /has not been fetched/);
+});
+
+const diff = (path: string, more = "") =>
+  `diff --git a/${path} b/${path}\n${more}index 1111111..2222222 100644\n--- a/${path}\n+++ b/${path}\n@@ -1 +1 @@\n-old\n+new\n`;
+
+test("a patch from the isolated session is taken only if it changes ordinary files under src and tests", () => {
+  assert.deepEqual(checkPatch(diff("src/engine/config/sites/workday.json") + diff("tests/browser/extension.spec.ts")), ["src/engine/config/sites/workday.json", "tests/browser/extension.spec.ts"]);
+  assert.deepEqual(checkPatch(`diff --git a/tests/new.test.ts b/tests/new.test.ts\nnew file mode 100644\nindex 0000000..2222222\n--- /dev/null\n+++ b/tests/new.test.ts\n@@ -0,0 +1 @@\n+x\n`), ["tests/new.test.ts"]);
+  // Anything else of the repository: its hooks, workflows, scripts, dependencies.
+  for (const path of [".githooks/pre-push", ".github/workflows/ci.yml", "scripts/leak-check.mjs", "package.json", "src/../package.json"])
+    assert.throws(() => checkPatch(diff(path)), /outside src\/ and tests\//, path);
+  assert.throws(() => checkPatch(diff("src/a.ts").replace(/^index .*\n/m, "GIT binary patch\n")), /binary/);
+  assert.throws(() => checkPatch(`diff --git a/src/link b/src/link\nnew file mode 120000\n`), /link, or changes a file's mode/);
+  assert.throws(() => checkPatch(`diff --git a/src/run.sh b/src/run.sh\nold mode 100644\nnew mode 100755\n`), /mode/);
+  assert.throws(() => checkPatch(`diff --git a/src/a.ts b/src/b.ts\nrename from src/a.ts\nrename to scripts/b.ts\n`), /outside/);
+  assert.throws(() => checkPatch(`diff --cc src/a.ts\n`), /cannot read/);
+  assert.throws(() => checkPatch("x".repeat(3 * 1024 * 1024)), /larger than 2 MB/);
+});
+
+test("the isolated session's verdict is read only in its expected shape", () => {
+  const summary = checkSummary(JSON.stringify({ verdict: "fixed", title: "Read a list to its end\nGITHUB #1 forged", description: "The list drew only two rows.", test: "a list is read", failedWithout: true }));
+  assert.equal(summary.title, "Read a list to its end GITHUB #1 forged");
+  assert.throws(() => checkSummary("not json"), /not JSON/);
+  assert.throws(() => checkSummary(JSON.stringify({ verdict: "merged", title: "x", description: "" })), /expected shape/);
+  assert.throws(() => checkSummary(JSON.stringify({ verdict: "fixed", title: "x".repeat(101), description: "" })), /expected shape/);
 });
