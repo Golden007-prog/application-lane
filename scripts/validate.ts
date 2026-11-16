@@ -151,6 +151,14 @@ function snapshot(): string {
       rmSync(temporary, { recursive: true, force: true });
     }
   }
+  // A tree unpacked by another checkout links that checkout's packages; a
+  // worktree removed since leaves the link dangling, and every test then
+  // reads as "no test is named" (2026-11-16). Linked to this one's instead.
+  const packages = join(dir, "node_modules");
+  if (!existsSync(packages)) {
+    rmSync(packages, { force: true });
+    symlinkSync(join(checkout, "node_modules"), packages);
+  }
   // Trees no run has used for a day go (a full suite takes under an hour).
   const touched = new Date();
   utimesSync(dir, touched, touched);
