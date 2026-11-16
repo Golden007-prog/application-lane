@@ -1157,8 +1157,15 @@ footer span:last-child {
 .status.failed {
   --pill: var(--danger);
 }
-.status.cancelled {
+.status.cancelled,
+.status.abandoned {
   --pill: var(--stage-abandoned);
+}
+.status.blocked {
+  --pill: var(--stage-blocked);
+}
+.status.submitted {
+  --pill: var(--stage-submitted);
 }
 .status.queued {
   --pill: var(--info);

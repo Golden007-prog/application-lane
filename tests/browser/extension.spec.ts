@@ -17709,6 +17709,9 @@ test("Abandon on the current tab's card abandons the application after a confirm
   await expect.poll(async () => (await state()).applications.find((app: { id: string }) => app.id === id)?.workflowStage).toBe("abandoned");
   await expect(panel.getByRole("status")).toContainText("Abandoned");
   await expect(card.getByRole("button", { name: "Abandon" })).toHaveCount(0);
+  // The card says why the button is gone: its stage, not the last fill's
+  // "Needs attention" (the applicant asked where Abandon went).
+  await expect(card.locator(".current-status .status")).toHaveText("Abandoned");
   await page.close();
 });
 

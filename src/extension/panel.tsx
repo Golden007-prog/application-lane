@@ -1369,8 +1369,13 @@ function App() {
                   ) : null}
                   {linkedApplication && (
                     <div className="current-status">
-                      <span className={`status ${suggesting(linkedApplication) ? "filling" : linkedApplication.status}`}>
-                        {suggesting(linkedApplication) ? "Still filling" : labels[linkedApplication.status]}
+                      {/* A finished application shows its stage, not its last fill's
+                          status: an abandoned one read "Needs attention", and
+                          with no Abandon button the card looked broken. */}
+                      <span className={`status ${finished(linkedApplication) ? linkedApplication.workflowStage : suggesting(linkedApplication) ? "filling" : linkedApplication.status}`}>
+                        {finished(linkedApplication)
+                          ? ({ submitted: "Submitted", blocked: "Blocked", abandoned: "Abandoned" } as Record<string, string>)[linkedApplication.workflowStage]
+                          : suggesting(linkedApplication) ? "Still filling" : labels[linkedApplication.status]}
                       </span>
                       <small>
                         {linkedApplication.filled} field{linkedApplication.filled === 1 ? "" : "s"} filled
