@@ -1211,8 +1211,10 @@ export function selectedCustomValue(element: Control): string | undefined {
   // An older react-select (no combobox role; one employer's form) shows its
   // choice as a "…-singleValue" block in its container. A flag drawn there
   // has a title, which is no part of the choice.
-  if (element.matches('input[id^="react-select-"][aria-autocomplete="list"],.dropdown-autocomplete input[aria-autocomplete="list"]')) {
-    const container = element.closest('.dropdown-autocomplete,[class*="-container"]');
+  // So does Pinpoint's, whose input has its own id: read as its empty search
+  // box, its filled Country and State were called unanswered (report 25a9fc1b).
+  if (element.matches('input[id^="react-select-"][aria-autocomplete="list"],.dropdown-autocomplete input[aria-autocomplete="list"],input.react-select__input[aria-autocomplete="list"]')) {
+    const container = element.closest('.dropdown-autocomplete,.react-select,[class*="-container"]:not([class*="input-container"])');
     const single = container?.querySelector('[class*="singleValue"],[class*="single-value"]');
     if (!single) return "";
     const copy = single.cloneNode(true) as Element;

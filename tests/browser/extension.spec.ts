@@ -6582,6 +6582,11 @@ test("Pinpoint's react-select Country, State and start lists are opened, searche
   expect(await page.evaluate(() => (window as any).selected)).toEqual({ country: "United States of America", town: "Virginia", start: "Immediately" });
   await expect(page.locator(".react-select__menu")).toHaveCount(0);
   expect(await page.locator(".react-select__input").evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))).toEqual(["", "", ""]);
+  // Its choice is read from the list's shown value, not its empty search
+  // box: read as empty, the panel called the filled lists unanswered and
+  // the refill guard saw no change.
+  const read = (await content(page, { type: "INSPECT" })).data.fields as { id: string; label: string; value: string }[];
+  expect(read.filter((field) => /^(Country|State)$/.test(field.label)).map((field) => field.value)).toEqual(["United States of America", "Virginia"]);
   await page.close();
 });
 
