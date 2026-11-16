@@ -6484,6 +6484,107 @@ test("Ashby's Location is searched and picked in a tab that sends no focus event
   expect(await page.evaluate(() => (window as any).choiceClicks)).toBe(1);
 });
 
+test("Pinpoint's react-select Country, State and start lists are opened, searched and picked with real input in a tab that sends no focus events", async () => {
+  // Reported on Pinpoint: react-select's control opens its menu from the
+  // input's focus event after a press. A tab out of view sends none, so a
+  // script's mousedown never opened it, nothing was typed, and State, Country
+  // and the start list failed. The page here swallows focus events that no
+  // real press caused, keeps its query only from real input (a value assigned
+  // by script is put back), says "No options" for a search with no entry, and
+  // closes on blur.
+  await ui({
+    type: "API",
+    path: "/v1/profile",
+    method: "PUT",
+    body: { ...profile, country: "United States", state: "Virginia", city: "Glendale", answers: [{ question: "When can you start?", answer: "Immediately" }] },
+  });
+  await context.route(`${origin}/pinpoint-react-select`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><title>Job Application</title><form onsubmit="return false"><fieldset><legend><span>1.</span> Personal Details</legend>
+        ${[["country", "Country"], ["town", "State"], ["start", "When can you start?"]].map(([name, label]) => `<div class="col-1-1" data-name="${name}"><label class="external-form__label external-form__label--required">${label}</label><div class="react-select"><div class="react-select__control"><div class="react-select__value-container"><div class="react-select__placeholder">${label}</div><div class="react-select__input-container"><input class="react-select__input" id="application_form[application][${name}]" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-haspopup="true"></div></div></div></div></div>`).join("")}
+        </fieldset></form><script>
+        const lists = {
+          country: ["Afghanistan", "Albania", "Algeria", "Canada", "United States of America"],
+          town: ["Alabama", "Alaska", "Arizona", "Arkansas", "Virginia", "West Virginia"],
+          start: ["Immediately", "In two weeks", "In a month"],
+        };
+        window.selected = {};
+        window.assignedValues = 0;
+        let lastPress = -Infinity;
+        window.addEventListener("mousedown", (event) => { if (event.isTrusted) lastPress = performance.now(); }, true);
+        window.addEventListener("focus", (event) => {
+          if (event.target instanceof HTMLInputElement && performance.now() - lastPress > 500) event.stopImmediatePropagation();
+        }, true);
+        for (const root of document.querySelectorAll("[data-name]")) {
+          const name = root.dataset.name;
+          const select = root.querySelector(".react-select");
+          const control = root.querySelector(".react-select__control");
+          const container = root.querySelector(".react-select__value-container");
+          const input = root.querySelector("input");
+          let focused = false, openAfterFocus = false, open = false, query = "";
+          const render = () => {
+            select.querySelector(".react-select__menu")?.remove();
+            input.setAttribute("aria-expanded", String(open));
+            if (!open) return;
+            const menu = document.createElement("div");
+            menu.className = "react-select__menu";
+            const shown = query ? lists[name].filter((label) => label.toLowerCase().includes(query.toLowerCase())) : lists[name].slice(0, 4);
+            if (!shown.length) menu.innerHTML = '<div class="react-select__menu-notice react-select__menu-notice--no-options">No options</div>';
+            for (const label of shown) {
+              const option = document.createElement("div");
+              option.className = "react-select__option";
+              option.id = "react-select-" + name + "-option-" + label;
+              option.textContent = label;
+              option.addEventListener("mousedown", (event) => event.preventDefault());
+              option.addEventListener("click", () => {
+                window.selected[name] = label;
+                container.querySelector(".react-select__placeholder")?.remove();
+                container.querySelector(".react-select__single-value")?.remove();
+                const value = document.createElement("div");
+                value.className = "react-select__single-value";
+                value.textContent = label;
+                container.prepend(value);
+                open = false; query = ""; input.value = "";
+                render();
+              });
+              menu.append(option);
+            }
+            const list = document.createElement("div");
+            list.className = "react-select__menu-list";
+            list.append(...menu.childNodes);
+            menu.append(list);
+            select.append(menu);
+          };
+          control.addEventListener("mousedown", (event) => {
+            if (!focused) { openAfterFocus = true; input.focus(); }
+            else if (!open) { open = true; render(); }
+            else if (event.target.tagName !== "INPUT") { open = false; render(); }
+            if (event.target.tagName !== "INPUT") event.preventDefault();
+          });
+          input.addEventListener("focus", () => { focused = true; if (openAfterFocus) { open = true; openAfterFocus = false; } render(); });
+          input.addEventListener("blur", () => { focused = false; open = false; query = ""; input.value = ""; render(); });
+          input.addEventListener("input", (event) => {
+            if (!event.isTrusted) { window.assignedValues++; input.value = query; return; }
+            query = input.value; open = true; render();
+          });
+        }
+        </script>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${origin}/pinpoint-react-select`);
+  await background(page);
+  await enqueue([page]);
+  await expect.poll(async () => (await state()).applications.find((app) => app.url === page.url())?.status, { timeout: 60000 })
+    .toMatch(/awaiting-user|ready/);
+  expect((await state()).applications.find((app) => app.url === page.url())!.missing.join("\n")).not.toMatch(/Dropdown options were not available/);
+  expect(await page.evaluate(() => (window as any).selected)).toEqual({ country: "United States of America", town: "Virginia", start: "Immediately" });
+  await expect(page.locator(".react-select__menu")).toHaveCount(0);
+  expect(await page.locator(".react-select__input").evaluateAll((inputs) => inputs.map((input) => (input as HTMLInputElement).value))).toEqual(["", "", ""]);
+  await page.close();
+});
+
 test("a combobox that opens on focus and lists plain-button options is chosen from, searching once only when its list lacks the answer", async () => {
   // C3 AI's own form over Greenhouse (046094a1bc36): a press does not open
   // the list, options are <button type="button" role="option">, and the school

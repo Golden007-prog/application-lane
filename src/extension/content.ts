@@ -1828,6 +1828,17 @@ if (!window.__applicationLane) {
         writing = false;
       }
     }
+    // A react-select this page's component API did not give up (Pinpoint's
+    // State, Country and start lists) opens its menu from the box's focus
+    // event after a press on its control. A tab out of view sends no focus
+    // event, so a script's mousedown never opened it and nothing was typed.
+    // It is driven with real input, as the applicant would: a press on the
+    // control, the search typed, the exact option clicked, nothing left open.
+    if (element instanceof HTMLInputElement && window === window.top && element.closest(".react-select__control") &&
+        !userAttention() && (await fillReactSelectTrusted(command, proposal, record, element, {
+          assertSafe, safe, takeFocus: () => { ownsFocus = true; },
+        })))
+      return;
     // An iCIMS list shows a first page until searched: India was not on it,
     // and a job's Country stayed empty. Its own search box
     // is used, as its site rule does for schools.
@@ -2664,6 +2675,138 @@ if (!window.__applicationLane) {
       await pause(150);
     }
     return 0;
+  }
+
+  // Opens, searches and picks from a react-select with real mouse and key
+  // input (see the call). Returns false, having sent nothing, when real input
+  // cannot be sent; throws when the list holds no exact option or the pick
+  // was not kept. The menu it opened is closed and the search it typed taken
+  // out again.
+  async function fillReactSelectTrusted(
+    command: Command,
+    proposal: Proposal,
+    record: RecordEntry,
+    input: HTMLInputElement,
+    own: { safe: () => boolean; assertSafe: (message: string) => void; takeFocus: () => void },
+  ): Promise<boolean> {
+    const control = input.closest<HTMLElement>(".react-select__control")!;
+    const prefix = "react-select";
+    const root = control.parentElement!;
+    const guard = { applicationId, operation, documentId };
+    const terms = [...new Set([proposal.value, ...(proposal.choices || [])]
+      .flatMap((term) => [term, ...nameVariants(term)]).map((term) => term.trim()).filter(Boolean))].slice(0, 5);
+    if (!terms.length) return false;
+    let interrupted = false;
+    const interrupt = (event: Event) => {
+      if (event.isTrusted && !(trustedWrite && event.composedPath().includes(trustedWrite))) interrupted = true;
+    };
+    const attention = ["pointerdown", "keydown", "touchstart"];
+    for (const type of attention) document.addEventListener(type, interrupt, true);
+    const allowed = () => valid(command) && !interrupted && !userAttention() && own.safe() && input.isConnected;
+    const menu = () => [...root.querySelectorAll<HTMLElement>(`.${prefix}__menu`)].find(rendered);
+    const optionsOf = () => [...(menu()?.querySelectorAll<HTMLElement>(`.${prefix}__option`) || [])].filter(rendered);
+    const label = (option: HTMLElement) => (option.textContent || "").replace(/\s+/g, " ").trim();
+    const shown = () => root.querySelector(`.${prefix}__single-value`)?.textContent?.replace(/\s+/g, " ").trim() || "";
+    const point = (target: HTMLElement, fraction = 0.5) => {
+      target.scrollIntoView({ block: "nearest" });
+      const box = target.getBoundingClientRect();
+      return box.width > 0 && box.height > 0
+        ? { x: Math.round(box.left + box.width * fraction), y: Math.round(box.top + box.height / 2) }
+        : undefined;
+    };
+    const send = async (within: Element, text: string, clear: number, at?: { x: number; y: number }) => {
+      if (!allowed()) throw new Error("Custom selection paused or superseded.");
+      trustedWrite = within;
+      record.writePendingAt = performance.now();
+      try {
+        await requestTrustedType(input, guard, text, clear, undefined, allowed, false, 0, false, at);
+      } finally {
+        trustedWrite = undefined;
+      }
+    };
+    const closeMenu = async () => {
+      if (!menu() || !input.isConnected || !valid(command)) return;
+      if (document.activeElement === input) input.blur();
+      await pause(150);
+      // A tab out of view sends no blur event: a real press on the control's
+      // own arrow (not its search box) closes an open menu.
+      const arrow = menu() && !userAttention() && !interrupted ? point(control, 0.97) : undefined;
+      if (arrow) await send(root, "", 0, arrow).catch(() => undefined);
+      await pause(150);
+    };
+    const takeOutSearch = async () => {
+      if (!input.value || !allowed()) return;
+      input.select();
+      await send(root, "", 1).catch(() => undefined);
+      await pause(100);
+    };
+    let pickedLabel = "";
+    try {
+      own.assertSafe("Custom control changed before selection.");
+      const opening = point(control, 0.5);
+      if (!opening) return false;
+      try {
+        await send(root, "", 0, opening);
+      } catch (error) {
+        if (!valid(command)) throw error;
+        return false;
+      }
+      // The press focused the box and opened the menu: the focus is this
+      // selection's own.
+      if (!interrupted && document.activeElement === input) own.takeFocus();
+      const wait = async (settled: () => boolean, ms: number) => {
+        for (let waited = 0; waited < ms && !settled(); waited += 100) {
+          await pause(100);
+          if (!allowed()) throw new Error("Custom selection paused or superseded.");
+        }
+      };
+      await wait(() => Boolean(menu()), 2000);
+      if (!menu()) throw new Error("Dropdown options were not available within 2 seconds of a real press on the control. Search or select manually.");
+      const choose = () => {
+        const options = optionsOf();
+        return options.length ? pickOption(proposal, options, label) : undefined;
+      };
+      await wait(() => optionsOf().length > 0 || Boolean(menu()?.textContent?.trim()), 1500);
+      let option = choose();
+      for (const term of terms) {
+        if (option) break;
+        if (input.value) input.select();
+        ownedAutocompleteSearches.set(input, term);
+        await send(root, term, 0);
+        // Its answer comes a moment after the keys: the list the term gave,
+        // or its "No options" notice.
+        await pause(250);
+        await wait(() => Boolean(choose()) || (!optionsOf().length && /no options/i.test(menu()?.textContent || "")), 1500);
+        option = choose();
+      }
+      own.assertSafe("Custom selection paused or superseded.");
+      if (!option) throw new Error(`No exact dropdown option for "${proposal.value}". Search or select manually.`);
+      pickedLabel = label(option);
+      await pause(80);
+      // The option shown now, at its point: the list moves as it filters.
+      const current = optionsOf().find((candidate) => label(candidate) === pickedLabel);
+      const at = current ? point(current) : undefined;
+      if (!current || !at) throw new Error("The dropdown option moved before it was picked. Choose it manually.");
+      await send(current.closest<HTMLElement>(`.${prefix}__menu`) || current, "", 0, at);
+      await wait(() => shown() === pickedLabel || !menu(), 1500);
+      await pause(150);
+      if (!valid(command) || record.protected || !input.isConnected) throw new Error("Custom selection was superseded.");
+      if (shown() !== pickedLabel)
+        throw new Error("The dropdown did not confirm the exact selection. Verify it manually.");
+      record.last = valueOf(input);
+      record.revision++;
+      record.automationWritten = true;
+      return true;
+    } finally {
+      for (const type of attention) document.removeEventListener(type, interrupt, true);
+      trustedWrite = undefined;
+      if (valid(command) && input.isConnected) {
+        // Never left open, and no query left behind.
+        if (!interrupted && !userAttention() && shown() !== pickedLabel) await takeOutSearch();
+        ownedAutocompleteSearches.delete(input);
+        if (!interrupted && !userAttention()) await closeMenu();
+      } else ownedAutocompleteSearches.delete(input);
+    }
   }
 
   async function typeTrusted(
