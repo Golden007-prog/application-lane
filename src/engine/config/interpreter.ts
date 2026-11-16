@@ -19,6 +19,7 @@ import { skillNames } from "../../shared/skill-names";
 import { pickMonth } from "../page/month-picker";
 import { listedNames, type OptionsSource, type SiteOptions } from "./options-source";
 import { nameVariants } from "../../shared/matching";
+import { streetOption } from "../../shared/answers";
 import { profileLanguages } from "../../shared/languages";
 import { degreeAliases } from "../../shared/education";
 
@@ -1053,6 +1054,16 @@ async function searchDropdown(
     if (option && (await choose(items.find((item) => label(item) === option.label))))
       return "selected";
     if (option) opened = false;
+    // A street search lists whole addresses ("100 East Mill Way, Blacksburg,
+    // VA 24060"), often the same one more than once: the one listing of the
+    // saved street in its city is picked, never another address.
+    if (/^\d/.test(values[0].trim())) {
+      const fits = items.filter((item) => streetOption(values[0], values.slice(1), label(item)) !== undefined);
+      if (fits.length && new Set(fits.map(label)).size === 1) {
+        if (await choose(fits[0])) return "selected";
+        opened = false;
+      }
+    }
   }
   // A school missing from the list: the list's own entry for that ("*School
   // Not Found (enter into Other School)", "Other") says so, and "Other

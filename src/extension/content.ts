@@ -3653,7 +3653,9 @@ if (!window.__applicationLane) {
       configController = new AbortController();
       return inspect();
     }
-    if (!valid(command)) throw new Error("Operation is paused or stale.");
+    // Which command, and which check, failed: three Workday fills ended on
+    // this with nothing to say why (report 83effc7c).
+    if (!valid(command)) throw new Error(`Operation is paused or stale (${command.type}: ${invalidCommandReason(command) || "unknown"})`);
     if (command.type === "AUTHORIZE_MAIN")
       return {
         authorized: authorizeMainWorld(

@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { profileSchema, type Field, type GenerationRequest } from "../src/shared/model";
-import { leftReasons, pickOption } from "../src/shared/answers";
+import { leftReasons, pickOption, rankOption } from "../src/shared/answers";
 import {
   applicationQuestion,
   fitLength,
@@ -1982,4 +1982,20 @@ test("a street search's whole-address listings are chosen by the saved street, w
   assert.throws(() => pickOption({ value: "100 E. Main St" }, listed, (o) => o));
   // Another house number or street is never taken.
   assert.equal(pickOption({ value: "102 E. Main St", choices: ["102 E. Main St, Blacksburg, VA"] }, listed, (o) => o), undefined);
+});
+
+const streetAsk = { value: "100 E. Mill Way", choices: ["100 E. Mill Way, Blacksburg, Virginia, 24060, United States of America", "100 E. Mill Way, Blacksburg, VA, 24060"] };
+test("a street search's listing reads E. as East and takes the comma-free state and ZIP", () => {
+  assert.notEqual(rankOption(streetAsk, "100 East Mill Way, Blacksburg, VA 24060"), undefined);
+  assert.notEqual(rankOption(streetAsk, "100 East Mill Way, Blacksburg, VA, USA"), undefined);
+});
+test("a street search's listing is never another city, ZIP, number or street", () => {
+  for (const other of [
+    "100 East Mill Way, Roanoke, VA 24011",
+    "100 East Mill Way, Blacksburg, VA 24061",
+    "1000 East Mill Way, Blacksburg, VA 24060",
+    "100 West Mill Way, Blacksburg, VA 24060",
+    "— Enter Manually —",
+  ])
+    assert.equal(rankOption(streetAsk, other), undefined, other);
 });

@@ -128,13 +128,8 @@ export function rankOption(
   // FLAGSTAFF, ARIZONA"), with directions and suffixes spelled out (Oracle's
   // Address Line 1). The saved street with its city (and state,
   // ZIP) says which; the street alone is the listing when only one fits.
-  if (/^\d/.test(optionText.trim()) && optionText.includes(",")) {
-    const listed = streetKey(optionText);
-    const choiceAt = (proposal.choices || []).findIndex((c) => streetKey(c) === listed);
-    if (choiceAt >= 0) return 20 + choiceAt / 100;
-    const street = optionText.split(",")[0];
-    if (/^\d/.test(proposal.value.trim()) && streetKey(street) === streetKey(proposal.value)) return 48;
-  }
+  const street = streetOption(proposal.value, proposal.choices || [], optionText);
+  if (street !== undefined) return street;
   // A list that prefixes or suffixes its own short code: "CS - Computer
   // Science", "Computer Science (CS)", "Master of Science (M.S)" (one employer's
   // Workday). The rest must be the whole answer.
@@ -302,6 +297,27 @@ function degreeSubjects(text: string): { level: string; subjects: string[] } | u
   const match = norm(text.replace(/\([^()]*\)\s*$/, "")).match(/^(?:[a-z]{1,4} )*?(associate|bachelor|master|doctor)(?: s|s)? (?:degree )?(?:of|in) (.+)$/);
   if (!match) return;
   return { level: match[1], subjects: match[2].split(/ or | and /).map((subject) => subject.trim()).filter(Boolean) };
+}
+
+// A street search's listing for the saved street: the same house number and
+// street (directions and suffixes read alike), in the city the saved address
+// names when the listing names one. The whole saved address as one of the
+// choices ranks first; the street alone, 48. Never another address.
+export function streetOption(value: string, choices: string[], optionText: string): number | undefined {
+  if (!/^\d/.test(optionText.trim()) || !optionText.includes(",")) return;
+  const listed = streetKey(optionText);
+  const choiceAt = choices.findIndex((c) => streetKey(c) === listed);
+  if (choiceAt >= 0) return 20 + choiceAt / 100;
+  const parts = optionText.split(",").map((part) => part.trim());
+  const wanted = [value, ...choices].filter((text) => /^\d/.test(text.trim()));
+  if (!wanted.some((text) => streetKey(text.split(",")[0]) === streetKey(parts[0]))) return;
+  // Where the saved address says which city and ZIP, the listing agrees.
+  const cities = wanted.map((text) => norm(text.split(",")[1] || "")).filter(Boolean);
+  if (parts[1] && cities.length && !cities.includes(norm(parts[1]))) return;
+  const zip = optionText.match(/\b\d{5}\b/)?.[0];
+  const zips = wanted.map((text) => text.match(/\b\d{5}\b/)?.[0]).filter(Boolean);
+  if (zip && zips.length && !zips.includes(zip)) return;
+  return 48;
 }
 
 // A street address with its directions and suffixes spelled out, to be

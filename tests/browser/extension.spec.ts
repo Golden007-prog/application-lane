@@ -16939,6 +16939,64 @@ test("a list drawn as a link with no address is chosen from", async () => {
   await expect(page.locator('[id="1_WorkCountry_icimsDropdown"] .dropdown-text')).toHaveText("United States", { timeout: 45_000 });
 });
 
+// iCIMS' candidate profile: the street is a type-to-search list backed by a
+// geolocation server, whose results come after typing (one keystroke behind),
+// worded "100 East Mill Way, Blacksburg, VA 24060" with the first item always
+// "— Enter Manually —", and the same address listed more than once.
+test("an iCIMS street search picks the listing of the saved street in its city", async () => {
+  test.setTimeout(120000);
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, address: "100 E. Mill Way", addressLine2: "", city: "Blacksburg", state: "VA", postalCode: "24060" } });
+  const site = atsOrigins[4];
+  await context.route(`${site}/jobs/3/intern/street**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><title>Profile</title><body><form onsubmit="return false"><div class="iCIMS_TableRow">
+        <div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.AddressStreet1" class="iCIMS_LabelText">Address</label></div>
+        <div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.AddressStreet1" name="-1_PersonProfileFields.AddressStreet1" data-label="Address" class=" iCIMS_Forms_Global customFieldContainer iCIMS_Forms_TypeToSearchTextFieldDropDown iCIMS_Forms_RequiredField form-control dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1" icimsdropdown-selected="" aria-required="true" i_required="true" role="combobox" aria-expanded="false"><option legacy="true" selected=""></option></select><a id="-1_PersonProfileFields.AddressStreet1_icimsDropdown" class="dropdown-select" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.AddressStreet1" aria-required="true" role="combobox" aria-label="Address"><span id="-1_PersonProfileFields.AddressStreet1_fakeSelected_icimsDropdown" class="dropdown-text"><span class="dropdown-placeholder">-Select-</span></span><div class="dropdown-arrow-container"><i class="dropdown-arrow"></i></div></a><div id="-1_PersonProfileFields.AddressStreet1_icimsDropdown_ctnr" class="dropdown-container dropdown-invisible" aria-expanded="false"><input type="text" class="dropdown-search" autocomplete="off" placeholder="— Type to Search —" title="— Type to Search —" aria-label="— Type to Search —" role="combobox" aria-autocomplete="list"><div aria-live="polite"><ul id="-1_PersonProfileFields.AddressStreet1_dropdown-results" class="dropdown-results" role="listbox"><li class="dropdown-result result-selectable" role="option" dropdown-index="-2" title="— Enter Manually —" aria-label="— Enter Manually —">— Enter Manually —</li></ul></div></div></div>
+      </div>
+      <div class="iCIMS_TableRow"><label for="note">Note</label><input id="note" name="note"></div></form><script>
+        window.picks = [];
+        const anchor = document.getElementById("-1_PersonProfileFields.AddressStreet1_icimsDropdown");
+        const ctnr = document.getElementById("-1_PersonProfileFields.AddressStreet1_icimsDropdown_ctnr");
+        const search = ctnr.querySelector("input.dropdown-search");
+        const list = ctnr.querySelector("ul.dropdown-results");
+        const manual = '<li class="dropdown-result result-selectable" role="option" dropdown-index="-2" title="— Enter Manually —" aria-label="— Enter Manually —">— Enter Manually —</li>';
+        const server = (query) => /^100 E/i.test(query)
+          ? ["100 East Mill Way, Roanoke, VA 24011", "100 East Mill Way, Blacksburg, VA 24060", "100 East Mill Way, Blacksburg, VA 24060", "1000 East Mill Way, Blacksburg, VA 24060"]
+          : [];
+        function draw(query) {
+          list.innerHTML = manual + server(query).map((name, index) => '<li class="dropdown-result result-selectable" role="option" dropdown-index="' + index + '" title="' + name + '" aria-label="' + name + '">' + name + '</li>').join("");
+        }
+        const show = (open) => { ctnr.classList.toggle("dropdown-invisible", !open); anchor.setAttribute("aria-expanded", String(open)); };
+        anchor.addEventListener("mousedown", () => show(anchor.getAttribute("aria-expanded") !== "true"));
+        // The server answers after a moment, to the text as it was a key before.
+        let before = "";
+        search.addEventListener("keyup", () => {
+          const asked = before;
+          before = search.value;
+          setTimeout(() => draw(asked), 400);
+        });
+        list.addEventListener("click", (event) => {
+          const item = event.target.closest("li");
+          if (!item) return;
+          window.picks.push(item.textContent);
+          if (item.getAttribute("dropdown-index") === "-2") return;
+          anchor.querySelector(".dropdown-text").textContent = item.textContent;
+          show(false);
+        });
+        draw("");
+      </script></body>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${site}/jobs/3/intern/street?from=profile`);
+  await enqueue([page]);
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressStreet1_icimsDropdown"] .dropdown-text')).toHaveText("100 East Mill Way, Blacksburg, VA 24060", { timeout: 90000 });
+  expect(await page.evaluate(() => (window as any).picks)).toEqual(["100 East Mill Way, Blacksburg, VA 24060"]);
+  // The fill went on to the rest of the step and ended, the street not proposed again.
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 90000 }).toMatch(/^(awaiting-user|ready)$/);
+});
+
 // one employer's iCIMS screening page: native lists
 // marked role="combobox", naming a listbox that is never drawn. Waited on
 // as custom lists, every one ended "Dropdown options were not available".
