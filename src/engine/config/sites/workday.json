@@ -118,6 +118,7 @@
               "path": [
                 "//*[@data-automation-activepopup='true' or @data-automation-id='activeListContainer']//*[@data-automation-id='promptOption'][translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')=\"%LOWERVALUE%\"]",
                 "//*[@data-automation-activepopup='true' or @data-automation-id='activeListContainer']//*[@data-automation-id='promptOption' or @data-automation-id='promptLeafNode' or @role='option'][translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')=\"%LOWERVALUE%\"]",
+                "//*[@data-automation-activepopup='true' or @data-automation-id='activeListContainer']//*[@data-automation-id='promptOption'][starts-with(translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz'),\"%LOWERVALUE%\")]",
                 "//*[@role='listbox'][@id=//button[@aria-haspopup='listbox' and @aria-expanded='true']/@aria-controls]//*[@role='option'][translate(normalize-space(.),'ABCDEFGHIJKLMNOPQRSTUVWXYZ','abcdefghijklmnopqrstuvwxyz')=\"%LOWERVALUE%\"]"
               ],
               "method": "click",

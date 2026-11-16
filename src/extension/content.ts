@@ -4164,6 +4164,11 @@ if (!window.__applicationLane) {
                     ? command.artifact
                     : undefined;
             if (/^upload(Resume|CoverLetter|File)$/.test(method) && !file) return false;
+            // Clearing a search box that kept focus ends in a blur of our own:
+            // the browser then fires a real change and focusout, which are
+            // not the applicant's edit (Workday's How Did You Hear About Us?).
+            if (method === "clearValue" && element === (element.getRootNode() as Document | ShadowRoot).activeElement)
+              searchSettle = { element, until: performance.now() + 1500 };
             const result = await requestMainWorld(
               element,
               { applicationId, operation, documentId },

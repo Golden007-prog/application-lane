@@ -1019,6 +1019,80 @@ test("the captured Workday source dropdown uses confirmed referral preferences",
   });
 });
 
+// Workday's How Did You Hear About Us? is a search prompt (results from its
+// sources endpoint). The site clears a box that keeps focus when it blurs, so
+// the fill's own clearing ended in a real change and focusout that paused the
+// fill as the applicant's edit.
+const sourcePrompt = (entries: string[]) => `<!doctype html><main data-automation-id="applicationPage"><form>
+  <div data-automation-id="formField-source" data-fkit-id="source--source">
+    <label for="source--source"><span>How Did You Hear About Us?<abbr aria-hidden="true">*</abbr></span></label>
+    <div data-automation-id="multiSelectContainer" data-uxi-widget-type="multiselect"><div data-automation-id="multiselectInputContainer">
+      <input id="source--source" type="text" placeholder="Search" data-uxi-widget-type="selectinput"></div></div>
+  </div></form></main><script>
+  const entries = ${JSON.stringify(entries)};
+  const input = document.getElementById('source--source');
+  // A controlled box puts back what was last typed when the page clears it.
+  let typed = '';
+  input.addEventListener('input', (event) => {
+    if (event.isTrusted) typed = input.value;
+    else if (!input.value && typed) { input.value = typed; typed = ''; }
+  });
+  const container = input.closest('[data-automation-id="multiSelectContainer"]');
+  const close = () => document.querySelector('[data-automation-activepopup="true"]')?.remove();
+  input.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    const typed = input.value.toLowerCase();
+    setTimeout(() => {
+      close();
+      const found = entries.filter((name) => name.toLowerCase().includes(typed));
+      const box = document.createElement('div');
+      box.setAttribute('data-automation-activepopup', 'true');
+      box.innerHTML = '<div role="listbox" data-automation-id="activeListContainer">' + found.map((name) => '<div role="option" data-automation-id="menuItem"><div data-automation-id="promptLeafNode"><div data-automation-id="promptOption">' + name + '</div></div></div>').join('') + '</div>';
+      document.body.append(box);
+      for (const leaf of box.querySelectorAll('[data-automation-id="promptLeafNode"]'))
+        leaf.addEventListener('click', () => {
+          const selected = document.createElement('div');
+          selected.setAttribute('data-automation-id', 'selectedItem');
+          selected.textContent = leaf.textContent;
+          container.insertBefore(selected, container.firstChild);
+          input.value = '';
+          close();
+        });
+    }, 200);
+  });
+  // Leaving the box with text nobody chose empties it, a real change.
+  input.addEventListener('blur', () => { setTimeout(close, 50); if (input.value) input.value = ''; });
+</script>`;
+
+test("a Workday source search that finds nothing is cleared without pausing the fill", async () => {
+  const workdayOrigin = atsOrigins[0];
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, referralSource: ["Job Board"] } });
+  await context.route(`${workdayOrigin}/**`, (route) => route.fulfill({ contentType: "text/html", body: sourcePrompt(["Podcast", "Newsletter"]) }));
+  const page = await context.newPage();
+  await page.goto(`${workdayOrigin}/en-US/acme/job/source-nothing-found`);
+  await panel.bringToFront();
+  await background(page);
+  await enqueue([page]);
+  await expect.poll(async () => (await state()).applications.at(-1)?.status, { timeout: 60_000 }).toMatch(/ready|awaiting-user|paused/);
+  const app = (await state()).applications.at(-1)!;
+  expect(app.status).not.toBe("paused");
+  expect(app.note || "").not.toMatch(/You interacted/);
+});
+
+test("a Workday source search with only Other entries takes the Other entry", async () => {
+  const workdayOrigin = atsOrigins[0];
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, referralSource: [] } });
+  await context.route(`${workdayOrigin}/**`, (route) => route.fulfill({ contentType: "text/html", body: sourcePrompt(["Other partner not listed", "Other job board not listed"]) }));
+  const page = await context.newPage();
+  await page.goto(`${workdayOrigin}/en-US/acme/job/source-other-entries`);
+  await panel.bringToFront();
+  await background(page);
+  await enqueue([page]);
+  await expect(page.locator('[data-automation-id="selectedItem"]')).toHaveText([/^Other /], { timeout: 60_000 });
+  expect((await state()).applications.at(-1)?.status).not.toBe("paused");
+});
+
 test("captured Workday address lines do not share the line-one value", async () => {
   const workdayOrigin = atsOrigins[0];
   const address = "100 Test Way";
