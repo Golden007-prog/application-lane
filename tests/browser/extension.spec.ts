@@ -6488,7 +6488,11 @@ test("Pinpoint's react-select lists are opened and picked in a tab that sends no
   // Reported on Pinpoint: its react-select (control > input) opens on a press
   // only once focus has been seen, and a tab out of view sends no focus
   // event, so the one press the fill made opened nothing and the field was
-  // given up on. Its menu also opens from typing.
+  // given up on. Its menu also opens from typing, and its input is React's: a
+  // value a script assigns is put back empty, so the search is typed with
+  // keys, and "United States of America" (no Country there says it) finds
+  // "No options" until the shorter "United States" is searched.
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, country: "United States of America" } });
   const page = await context.newPage();
   await page.goto(`${origin}/pinpoint-react-select-no-focus-events`);
   await page.evaluate(() => {
@@ -6505,15 +6509,27 @@ test("Pinpoint's react-select lists are opened and picked in a tab that sends no
         input.setAttribute("aria-expanded", "false");
         input.removeAttribute("aria-controls");
       };
+      // A React controlled input: the text it holds is state, a value a script
+      // assigns is put back empty on the render that follows, and only keys
+      // typed as the applicant would (trusted input) stay in the box.
+      let state = "";
       const open = () => {
         close();
-        const typed = input.value.toLowerCase();
+        const typed = state.toLowerCase();
         const menu = document.createElement("div");
         menu.className = "react-select__menu";
         const list = document.createElement("div");
         list.id = `${input.id}-listbox`;
         list.setAttribute("role", "listbox");
-        for (const text of options.filter((o) => o.toLowerCase().includes(typed))) {
+        // A long list draws only its first entries until something is typed.
+        const found = options.filter((o) => o.toLowerCase().includes(typed)).slice(0, typed ? 99 : 2);
+        if (!found.length) {
+          const notice = document.createElement("div");
+          notice.className = "react-select__menu-notice react-select__menu-notice--no-options";
+          notice.textContent = "No options";
+          list.append(notice);
+        }
+        for (const text of found) {
           const option = document.createElement("div");
           option.className = "react-select__option";
           option.setAttribute("role", "option");
@@ -6521,6 +6537,7 @@ test("Pinpoint's react-select lists are opened and picked in a tab that sends no
           option.addEventListener("click", () => {
             (window as any).picks.push(text);
             shown.textContent = text;
+            state = "";
             input.value = "";
             close();
           });
@@ -6539,12 +6556,18 @@ test("Pinpoint's react-select lists are opened and picked in a tab that sends no
         if (document.activeElement !== input) input.focus();
         else if (!shell.querySelector(".react-select__menu")) open();
       });
-      input.addEventListener("input", open);
+      input.addEventListener("input", (event) => {
+        // The menu filters on what React was told; a script's value is
+        // then put back in the box, empty, as recorded on Pinpoint.
+        state = input.value;
+        if (!event.isTrusted) input.value = "";
+        open();
+      });
       window.addEventListener("focus", (event) => { if (event.target === input) event.stopImmediatePropagation(); }, true);
       return shell;
     };
     document.querySelector('[name="country"]')!.closest("label")!.replaceWith(
-      make("application_form[application][country]", "Country", ["Canada", "United States", "United Kingdom"]));
+      make("application_form[application][country]", "Country", ["Canada", "United Kingdom", "United States"]));
     document.querySelector('[name="phone"]')!.closest("label")!.replaceWith(
       make("application_form[application][town]", "City", ["Phoenix", "Phoenixville", "Glendale"]));
   });
