@@ -2702,6 +2702,58 @@ test("captured Workday questions fill only confirmed standard answers", async ()
   expect(labels).not.toContain("Select One Required");
 });
 
+// Workday's eligibility list words Yes twice: "Yes, on an unrestricted and
+// indefinite basis (…)" and "Yes, with restrictions and/or for a fixed time
+// period (…)". A plain Yes picked neither (report 9ad87d18); one who needs no
+// sponsorship holds the unrestricted kind.
+test("Workday eligibility list with two kinds of Yes takes the unrestricted one when no sponsorship is needed", async () => {
+  const workdayOrigin = atsOrigins[0];
+  await ui({
+    type: "API",
+    path: "/v1/profile",
+    method: "PUT",
+    body: { ...profile, workAuthorization: [{ country: "US", status: "citizen", needsSponsorship: false }] },
+  });
+  await context.route(`${workdayOrigin}/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><main data-automation-id="applyFlowPrimaryQuestionsPage">
+        <div data-automation-id="formField-c5a6" data-fkit-id="primaryQuestionnaire--c5a6"><fieldset><legend><div class="rich-label"><div data-automation-id="richText"><p>Are you legally eligible to work in the country in which this job is located?<abbr title="required" class="requiredAsterisk">*</abbr></p></div></div></legend><div><button aria-haspopup="listbox" type="button" value="" aria-label=" Select One Required" name="c5a6" id="primaryQuestionnaire--c5a6">Select One</button></div></fieldset></div>
+      </main><script>
+        const button = document.getElementById('primaryQuestionnaire--c5a6');
+        button.addEventListener('click', () => {
+          const open = document.querySelector('ul[role="listbox"]');
+          if (open) { open.remove(); button.setAttribute('aria-expanded', 'false'); return; }
+          button.setAttribute('aria-expanded', 'true');
+          const list = document.createElement('ul');
+          list.setAttribute('role', 'listbox');
+          for (const label of ['Select One', 'Yes, on an unrestricted and indefinite basis (no sponsorship needed now or later)', 'Yes, with restrictions and/or for a fixed time period (requires sponsorship or a permit)', 'No']) {
+            const item = document.createElement('li');
+            item.setAttribute('role', 'option');
+            item.innerHTML = '<div></div>';
+            item.firstElementChild.textContent = label;
+            item.addEventListener('click', () => {
+              if (label === 'Select One') return;
+              button.textContent = label;
+              button.setAttribute('aria-label', label + ' Required');
+              button.setAttribute('aria-expanded', 'false');
+              list.remove();
+            });
+            list.append(item);
+          }
+          document.body.append(list);
+        });
+      </script>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${workdayOrigin}/en-US/acme/job/eligibility-kinds`);
+  await panel.bringToFront();
+  await background(page);
+  await enqueue([page]);
+  await expect(page.locator("#primaryQuestionnaire--c5a6")).toHaveText(/^Yes, on an unrestricted and indefinite basis/, { timeout: 30_000 });
+});
+
 // one employer's Workday: a free-text question is titled only by
 // its fieldset's legend, and read as its id the draft refused it as no question.
 test("Workday questionnaire text answer is named by its legend", async () => {

@@ -595,6 +595,13 @@ export function selectorValues(
     // still not be a protected veteran. The saved military answer says.
     if (choiceKeys[choiceKey].field === "veteranStatus" && canonicalAnswer("veteranStatus", raw) === "No" && neverServed(profile))
       return unique([...choices.filter((choice) => choice !== "No"), "i am not a veteran", "not a veteran", "No"]);
+    // "Yes, on an unrestricted and indefinite basis (regardless of …)" beside
+    // "Yes, with restrictions and/or for a fixed time period (…)" (one
+    // employer's Workday): a plain Yes is both, so it picked neither. One who
+    // needs no sponsorship holds the unrestricted kind.
+    if (choiceKeys[choiceKey].field === "workAuthorization" && canonicalAnswer("workAuthorization", raw) === "Yes" &&
+        authorizationAnswer(profile, "", "sponsorship") === "No")
+      return unique([...choices, "yes, on an unrestricted and indefinite basis"]);
     return choices;
   }
   let values =

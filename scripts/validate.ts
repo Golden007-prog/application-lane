@@ -112,7 +112,11 @@ function snapshot(): string {
   const index = join(runDir, "index");
   const env = { ...process.env, GIT_INDEX_FILE: index };
   execFileSync("git", ["read-tree", "HEAD"], { env });
-  execFileSync("git", ["add", "-A", "--", ".", ":!.claude"], { env, stdio: ["ignore", "ignore", "pipe"] });
+  // .claude is left out; where git already ignores it (the public checkout,
+  // whose private files are excluded), naming it fails the whole add.
+  let claudeIgnored = false;
+  try { execFileSync("git", ["check-ignore", "-q", ".claude"]); claudeIgnored = true; } catch {}
+  execFileSync("git", ["add", "-A", "--", ".", ...(claudeIgnored ? [] : [":!.claude"])], { env, stdio: ["ignore", "ignore", "pipe"] });
   tree = execFileSync("git", ["write-tree"], { env }).toString().trim();
   if (without.length) {
     // The same tree with these files as committed: the regression has to
