@@ -1360,6 +1360,10 @@ if (!window.__applicationLane) {
       event.composedPath().includes(searchSettle.element)
     )
       return;
+    // A modifier pressed alone changes nothing on the page: the applicant's
+    // Win+Shift+S for a screenshot, landing on the question the fill had
+    // focused, paused a Workday fill as their edit (report 45c45d09).
+    if (event.isTrusted && event.type === "keydown" && /^(Shift|Control|Alt|Meta|OS|AltGraph|CapsLock|Fn)$/.test((event as KeyboardEvent).key)) return;
     if (event.isTrusted && ["pointerdown", "keydown", "touchstart"].includes(event.type)) {
       applicantGesture = performance.now();
       // Only a control that takes typing keeps their attention: a click on

@@ -19,7 +19,7 @@ import { skillNames } from "../../shared/skill-names";
 import { pickMonth } from "../page/month-picker";
 import { listedNames, type OptionsSource, type SiteOptions } from "./options-source";
 import { nameVariants } from "../../shared/matching";
-import { streetOption } from "../../shared/answers";
+import { sameStreet, streetOption } from "../../shared/answers";
 import { profileLanguages } from "../../shared/languages";
 import { degreeAliases } from "../../shared/education";
 
@@ -905,6 +905,25 @@ function listFoundNothing(element: Element) {
   );
 }
 
+// iCIMS draws a country from the resume parser's answer without running the
+// Country list's own change handling, which is what loads State's list: the
+// anchor reads "United States" and State opens empty, and a search typed into
+// it sends nothing. A parent list (data-ddd-child-link) whose child holds no
+// answer and no options is picked again, through its list as the site's own
+// click does, so its change handling runs.
+function childListUnloaded(anchor: Element) {
+  if (!anchor.matches('a[id$="_icimsDropdown"]')) return false;
+  const doc = anchor.ownerDocument;
+  const select = doc.getElementById(anchor.id.replace(/_icimsDropdown$/, ""));
+  const link = select?.getAttribute("data-ddd-child-link");
+  if (!select || !link) return false;
+  const child = doc.getElementById(`${select.id.split("_")[0]}_${link}`) as HTMLSelectElement | null;
+  if (!child) return false;
+  if (child.value && child.value !== "-999") return false;
+  const box = doc.getElementById(`${child.id}_icimsDropdown_ctnr`);
+  return Boolean(box) && !box!.querySelector("li.result-selectable");
+}
+
 async function searchDropdown(
   anchor: Element,
   target: Element,
@@ -1110,6 +1129,7 @@ async function fillFallback(
   root: Document,
   globals: GlobalConfig,
   options: InterpreterOptions,
+  writeMethod = "react",
 ) {
   const executor = options.execute || defaultExecute;
   const execute = (request: MethodRequest) =>
@@ -1333,7 +1353,7 @@ async function fillFallback(
   return execute({
     element,
     globals,
-    method: "react",
+    method: writeMethod,
     signal: options.signal,
     values,
   });
@@ -2892,7 +2912,7 @@ export async function interpretConfig(
         // Not when the site itself calls it invalid: Microsoft's form showed
         // the profile's address while its own state held none ("Address
         // cannot be left blank"), and it was never typed again.
-        if (current && values.some(same) && element.getAttribute("aria-invalid") !== "true") {
+        if (current && values.some(same) && element.getAttribute("aria-invalid") !== "true" && !childListUnloaded(element)) {
           options.onConfirmed?.(element);
           results.push({ key, status: "skipped", reason: "The site's value is already right." });
           completed = true;
@@ -3286,14 +3306,23 @@ export async function interpretConfig(
     if (!completed) {
       const values = fallbackValues(key, profile, globals, options.valueContext);
       const element = values.length ? labeledFallback(key, context) : undefined;
+      // A street box already holding the saved street (written "East" for the
+      // saved "E.") is the answer: rewriting it only risks the site's reset.
+      if (element && key === "address" && values.some((value) => sameStreet(textValue(element), value))) {
+        used.add(element);
+        options.onConfirmed?.(element);
+        results.push({ key, status: "skipped", reason: "The site's value is already right." });
+        completed = true;
+      }
       if (
+        !completed &&
         element &&
         !used.has(element) &&
         !options.isLocked?.(element) &&
         (!textValue(element) || options.isReplaceable?.(element))
       ) {
         try {
-          if (await fillFallback(element, values, root, globals, options)) {
+          if (await fillFallback(element, values, root, globals, options, key === "address" ? "trustedType" : "react")) {
             used.add(element);
             results.push({ key, status: "filled" });
             completed = true;

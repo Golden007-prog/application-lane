@@ -6590,6 +6590,34 @@ test("Pinpoint's react-select Country, State and start lists are opened, searche
   await page.close();
 });
 
+// A modifier pressed alone (the applicant's Win+Shift+S screenshot, report
+// 45c45d09) on the field the fill left focused is no edit: it paused a
+// Workday fill as "a key press on" the question. A real key still does.
+test("Shift or Meta pressed alone on a focused field does not pause the application, a typed key does", async () => {
+  await context.route(`${origin}/modifier-keys`, (route) =>
+    route.fulfill({ contentType: "text/html", body: '<!doctype html><title>Engineer | Acme</title><form><label>First Name<input name="first"></label><label>Portfolio note<input id="note" name="note"></label></form>' }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${origin}/modifier-keys`);
+  await panel.bringToFront();
+  await enqueue([page]);
+  const app = async () => (await state()).applications.find((one: { url: string }) => one.url === page.url());
+  await expect.poll(async () => (await app())?.status, { timeout: 30000 }).toMatch(/awaiting-user|ready/);
+  await page.bringToFront();
+  await page.locator("#note").focus();
+  await page.keyboard.press("Shift");
+  await page.keyboard.press("Meta");
+  await page.keyboard.down("Meta");
+  await page.keyboard.press("Shift");
+  await page.keyboard.up("Meta");
+  await page.waitForTimeout(800);
+  expect((await app())?.status).not.toBe("paused");
+  expect((await app())?.note || "").not.toMatch(/You interacted/);
+  await page.keyboard.press("x");
+  await expect.poll(async () => (await app())?.note || "", { timeout: 10000 }).toMatch(/You interacted with this application/);
+  await page.close();
+});
+
 test("a combobox that opens on focus and lists plain-button options is chosen from, searching once only when its list lacks the answer", async () => {
   // C3 AI's own form over Greenhouse (046094a1bc36): a press does not open
   // the list, options are <button type="button" role="option">, and the school
@@ -17413,6 +17441,117 @@ test("an iCIMS street search picks the listing of the saved street in its city",
   // State loads its list only for the selected country, a second or more
   // after the last key: the fill waited for it.
   await expect(page.locator('[id="-1_PersonProfileFields.AddressState_icimsDropdown"] .dropdown-text')).toHaveText("Virginia");
+});
+
+// iCIMS draws the country the resume parser read without running the
+// Country list's own change handling, which is what loads State's list: the
+// anchor shows the country and State opens empty, a search typed into it
+// asks for nothing. The fixture's State list is loaded only by the Country
+// list's click, as the site's scripts do (optionSelected, then icimsChangeParent).
+test("an iCIMS country drawn from the parser has its list picked again so the state list loads", async () => {
+  test.setTimeout(120000);
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, address: "100 E. Mill Way", addressLine2: "", city: "Blacksburg", state: "VA", postalCode: "24060", country: "United States" } });
+  const site = atsOrigins[4];
+  await context.route(`${site}/jobs/3/intern/country-load**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><meta charset="utf-8"><title>Profile</title><style>.dropdown-invisible, .dropdown-hide { display: none; }</style><body><form onsubmit="return false">
+        <div class="iCIMS_TableRow"><div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.AddressCountry" class="iCIMS_LabelText">Country</label></div>
+        <div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.AddressCountry" name="-1_PersonProfileFields.AddressCountry" data-label="Country" class="iCIMS_Forms_Global customFieldContainer iCIMS_Forms_IdDropDown iCIMS_Forms_RequiredField form-control dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1" data-ddd-child-link="PersonProfileFields.AddressState" style="display:none" aria-required="true" i_required="true"><option value="12781" selected="selected">Hidden (12781)</option></select><a id="-1_PersonProfileFields.AddressCountry_icimsDropdown" class="dropdown-select" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.AddressCountry" aria-required="true" role="combobox" aria-label="Country"><span class="dropdown-text">United States</span></a><div id="-1_PersonProfileFields.AddressCountry_icimsDropdown_ctnr" class="dropdown-container dropdown-invisible" aria-expanded="false"><input type="text" class="dropdown-search" autocomplete="off" aria-label="— Type to Search —" role="combobox" aria-autocomplete="list"><div aria-live="polite"><ul class="dropdown-results" role="listbox"><li class="dropdown-result result-selectable" role="option" dropdown-index="0" title="United States" aria-label="United States">United States</li><li class="dropdown-result result-selectable" role="option" dropdown-index="1" title="Canada" aria-label="Canada">Canada</li></ul></div></div></div></div>
+        <div class="iCIMS_TableRow"><div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.AddressState" class="iCIMS_LabelText">State/Province</label></div>
+        <div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.AddressState" name="-1_PersonProfileFields.AddressState" data-label="State/Province" class="iCIMS_Forms_Global customFieldContainer iCIMS_Forms_IdDropDown iCIMS_Forms_RequiredField form-control dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1" data-ddd-parent-link="PersonProfileFields.AddressCountry" style="display:none" aria-required="true" i_required="true"><option value="" selected></option></select><a id="-1_PersonProfileFields.AddressState_icimsDropdown" class="dropdown-select" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.AddressState" aria-required="true" role="combobox" aria-label="State/Province"><span class="dropdown-text"><span class="dropdown-placeholder">Please select a country</span></span></a><div id="-1_PersonProfileFields.AddressState_icimsDropdown_ctnr" class="dropdown-container dropdown-invisible" aria-expanded="false"><input type="text" class="dropdown-search" autocomplete="off" aria-label="— Type to Search —" role="combobox" aria-autocomplete="list"><div aria-live="polite"><ul class="dropdown-results" role="listbox"></ul></div></div></div></div>
+      </form><script>
+        window.countryClicks = 0;
+        const states = ["Alabama", "Arizona", "Virginia"];
+        const stateAnchor = document.getElementById("-1_PersonProfileFields.AddressState_icimsDropdown");
+        const stateBox = document.getElementById("-1_PersonProfileFields.AddressState_icimsDropdown_ctnr");
+        const stateList = stateBox.querySelector("ul");
+        const stateSearch = stateBox.querySelector("input");
+        const countryAnchor = document.getElementById("-1_PersonProfileFields.AddressCountry_icimsDropdown");
+        const countryBox = document.getElementById("-1_PersonProfileFields.AddressCountry_icimsDropdown_ctnr");
+        let loaded = false;
+        const toggle = (anchor, box) => anchor.addEventListener("mousedown", () => {
+          const open = anchor.getAttribute("aria-expanded") !== "true";
+          box.classList.toggle("dropdown-invisible", !open);
+          anchor.setAttribute("aria-expanded", String(open));
+        });
+        toggle(countryAnchor, countryBox);
+        toggle(stateAnchor, stateBox);
+        // The site loads State's options only when its Country is chosen from
+        // the list (the select's onchange, icimsChangeParent).
+        countryBox.querySelector("ul").addEventListener("click", (event) => {
+          const item = event.target.closest("li");
+          if (!item) return;
+          window.countryClicks++;
+          countryAnchor.querySelector(".dropdown-text").textContent = item.textContent;
+          countryBox.classList.add("dropdown-invisible");
+          countryAnchor.setAttribute("aria-expanded", "false");
+          loaded = item.textContent === "United States";
+          stateList.innerHTML = loaded ? states.map((name, index) => '<li class="dropdown-result result-selectable" role="option" dropdown-index="' + index + '" title="' + name + '" aria-label="' + name + '">' + name + '</li>').join("") : "";
+        });
+        stateSearch.addEventListener("keyup", () => {
+          if (!loaded) return;
+          const asked = stateSearch.value.toLowerCase();
+          stateList.innerHTML = states.filter((name) => name.toLowerCase().includes(asked)).map((name, index) => '<li class="dropdown-result result-selectable" role="option" dropdown-index="' + index + '" title="' + name + '" aria-label="' + name + '">' + name + '</li>').join("");
+        });
+        stateList.addEventListener("click", (event) => {
+          const item = event.target.closest("li");
+          if (!item) return;
+          stateAnchor.querySelector(".dropdown-text").textContent = item.textContent;
+          document.getElementById("-1_PersonProfileFields.AddressState").innerHTML = '<option value="' + item.textContent + '" selected>' + item.textContent + '</option>';
+          stateBox.classList.add("dropdown-invisible");
+          stateAnchor.setAttribute("aria-expanded", "false");
+        });
+      </script></body>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${site}/jobs/3/intern/country-load?from=profile`);
+  await enqueue([page]);
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressState_icimsDropdown"] .dropdown-text')).toHaveText("Virginia", { timeout: 90000 });
+  // The country went through the list's own click, so State's list loaded.
+  expect(await page.evaluate(() => (window as any).countryClicks)).toBeGreaterThan(0);
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressCountry_icimsDropdown"] .dropdown-text')).toHaveText("United States");
+});
+
+// iCIMS' Address after "— Enter Manually —" is a plain text box. A value a
+// script sets is wiped when it loses focus (the fixture drops text no key
+// typed), so it is typed as the applicant does.
+const icimsStreetBox = (value: string) => `<!doctype html><meta charset="utf-8"><title>Profile</title><body><form onsubmit="return false">
+  <div class="iCIMS_TableRow"><div class="iCIMS_InfoField iCIMS_TableCell"><label for="-1_PersonProfileFields.AddressStreet1" id="label_-1_PersonProfileFields.AddressStreet1" class="iCIMS_LabelText">Address</label></div>
+  <div class="iCIMS_InfoData iCIMS_TableCell"><input type="text" id="-1_PersonProfileFields.AddressStreet1" name="-1_PersonProfileFields.AddressStreet1" data-label="Address" autocomplete="street-address" value="${value}" class="iCIMS_Forms_Global customFieldContainer iCIMS_Forms_Qnull iCIMS_Forms_TextField iCIMS_Forms_RequiredField form-control" aria-required="true" i_required="true"></div></div>
+  <div class="iCIMS_TableRow"><label for="note">Note</label><input id="note" name="note"></div></form><script>
+    window.scriptWrites = 0;
+    const box = document.getElementById("-1_PersonProfileFields.AddressStreet1");
+    let trusted = true;
+    box.addEventListener("input", (event) => { trusted = event.isTrusted; if (!event.isTrusted) window.scriptWrites++; });
+    box.addEventListener("blur", () => { if (!trusted) box.value = ""; });
+  </script></body>`;
+
+test("an iCIMS plain text Address is typed so the site keeps it", async () => {
+  test.setTimeout(120000);
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, address: "100 E. Mill Way", addressLine2: "", city: "Blacksburg", state: "VA", postalCode: "24060", country: "United States" } });
+  const site = atsOrigins[4];
+  await context.route(`${site}/jobs/3/intern/street-text**`, (route) => route.fulfill({ contentType: "text/html", body: icimsStreetBox("") }));
+  const page = await context.newPage();
+  await page.goto(`${site}/jobs/3/intern/street-text?from=profile`);
+  await enqueue([page]);
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 90000 }).toMatch(/^(awaiting-user|ready)$/);
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressStreet1"]')).toHaveValue("100 E. Mill Way");
+  expect(await page.evaluate(() => (window as any).scriptWrites)).toBe(0);
+});
+
+test("an iCIMS Address already holding the saved street is not rewritten", async () => {
+  test.setTimeout(120000);
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, address: "100 E. Mill Way", addressLine2: "", city: "Blacksburg", state: "VA", postalCode: "24060", country: "United States" } });
+  const site = atsOrigins[4];
+  await context.route(`${site}/jobs/3/intern/street-held**`, (route) => route.fulfill({ contentType: "text/html", body: icimsStreetBox("100 East Mill Way") }));
+  const page = await context.newPage();
+  await page.goto(`${site}/jobs/3/intern/street-held?from=profile`);
+  await enqueue([page]);
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 90000 }).toMatch(/^(awaiting-user|ready)$/);
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressStreet1"]')).toHaveValue("100 East Mill Way");
+  expect(await page.evaluate(() => (window as any).scriptWrites)).toBe(0);
 });
 
 // one employer's iCIMS screening page: native lists
