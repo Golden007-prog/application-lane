@@ -1359,6 +1359,91 @@ test("a captured Workday Work History (Optional) section adds and fills each job
   await expect(schools.nth(1)).toHaveValue("Contoso University", { timeout: 30_000 });
 });
 
+// Another Workday titles the work history "Professional Experience"
+// ("Professional-Experience-section", "...-1-panel"): its Add button was
+// never pressed and no job was added (report d547e945).
+test("a Workday Professional Experience section adds and fills each job", async () => {
+  const workdayOrigin = atsOrigins[0];
+  const work = [
+    { organization: "Acme", title: "Software Engineer Intern", location: "Phoenix, AZ", details: "Built TypeScript services.", startDate: "2025-05", endDate: "2025-08" },
+    { organization: "Contoso", title: "Research Assistant", location: "State College, PA", details: "Ran experiments.", startDate: "2024-01", endDate: "2024-12" },
+  ];
+  const education = [
+    { organization: "Penn State", title: "Master of Science", fieldOfStudy: "Data Science", startDate: "2025-08", endDate: "2027-05", location: "State College, PA", details: "" },
+    { organization: "Contoso University", title: "Bachelor of Science", fieldOfStudy: "Computer Science", startDate: "2021-08", endDate: "2025-05", location: "Phoenix, AZ", details: "" },
+  ];
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, work, education } });
+  await context.route(`${workdayOrigin}/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><main><div data-automation-id="applyFlowMyExpPage">
+        <div role="group" aria-labelledby="Professional-Experience-section" id="work">
+          <h4 id="Professional-Experience-section">Professional Experience</h4>
+          <div data-automation-id="instructionalText"><p><span>Enter your most recent/relevant work experience.</span></p></div>
+          <div class="add"><div><button data-automation-id="add-button">Add</button></div></div>
+        </div>
+        <div role="group" aria-labelledby="Education-(Required)-section" id="education">
+          <h4 id="Education-(Required)-section">Education (Required)</h4>
+          <div role="group" aria-labelledby="Education-(Required)-1-panel">
+            <div><h5 id="Education-(Required)-1-panel">Education (Required) 1</h5></div>
+            <div data-fkit-id="education-4--null">
+              <div data-automation-id="formField-schoolName" data-fkit-id="education-4--schoolName">
+                <label for="education-4--schoolName"><span>School or University<abbr aria-hidden="true">*</abbr></span></label>
+                <div><input type="text" id="education-4--schoolName" name="schoolName" aria-required="true"></div>
+              </div>
+            </div>
+          </div>
+          <div class="add"><div><button data-automation-id="add-button">Add Another</button></div></div>
+        </div>
+      </div></main><script>
+        let next = 47;
+        const field = (row, name, label, control) =>
+          '<div data-automation-id="formField-' + name + '" data-fkit-id="' + row + '--' + name + '"><label for="' + row + '--' + name + '">' + label + '</label><div>' + control + '</div></div>';
+        const date = (row, name, label) =>
+          '<div data-automation-id="formField-' + name + '" data-fkit-id="' + row + '--' + name + '"><fieldset><legend><label>' + label + '</label></legend><div id="' + row + '--' + name + '" role="group" data-automation-id="dateInputWrapper">' +
+          '<input role="spinbutton" aria-label="Month" id="' + row + '--' + name + '-dateSectionMonth-input" data-automation-id="dateSectionMonth-input">' +
+          '<input role="spinbutton" aria-label="Year" id="' + row + '--' + name + '-dateSectionYear-input" data-automation-id="dateSectionYear-input"></div></fieldset></div>';
+        const add = (section, title, fields) => {
+          const number = section.querySelectorAll(':scope > [role="group"]').length + 1;
+          const row = (section.id === 'work' ? 'workExperience-' : 'education-') + next++;
+          const panel = document.createElement('div');
+          panel.setAttribute('role', 'group');
+          panel.setAttribute('aria-labelledby', title + '-' + number + '-panel');
+          panel.innerHTML = '<div><h5 id="' + title + '-' + number + '-panel">' + title.replaceAll('-', ' ') + ' ' + number + '</h5><button>Delete</button></div><div data-fkit-id="' + row + '--null">' + fields(row) + '</div>';
+          section.insertBefore(panel, section.querySelector('.add'));
+          section.querySelector('[data-automation-id="add-button"]').textContent = 'Add Another';
+        };
+        document.querySelector('#work [data-automation-id="add-button"]').addEventListener('click', () =>
+          add(document.querySelector('#work'), 'Professional-Experience', (row) =>
+            field(row, 'jobTitle', 'Job Title', '<input type="text" id="' + row + '--jobTitle" name="jobTitle">') +
+            field(row, 'companyName', 'Company', '<input type="text" id="' + row + '--companyName" name="companyName">') +
+            field(row, 'location', 'Location', '<input type="text" id="' + row + '--location" name="location">') +
+            field(row, 'currentlyWorkHere', 'I currently work here', '<input type="checkbox" id="' + row + '--currentlyWorkHere" name="currentlyWorkHere">') +
+            date(row, 'startDate', 'From') + date(row, 'endDate', 'To') +
+            field(row, 'roleDescription', 'Role Description', '<textarea id="' + row + '--roleDescription"></textarea>')));
+        document.querySelector('#education [data-automation-id="add-button"]').addEventListener('click', () =>
+          add(document.querySelector('#education'), 'Education-(Required)', (row) =>
+            field(row, 'schoolName', 'School or University', '<input type="text" id="' + row + '--schoolName" name="schoolName">')));
+      </script>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${workdayOrigin}/en-US/acme/job/professional-experience`);
+  await panel.bringToFront();
+  await background(page);
+  await enqueue([page]);
+  const jobs = page.locator('#work > [role="group"]');
+  await expect(jobs).toHaveCount(2, { timeout: 30_000 });
+  await expect(jobs.nth(0).locator('input[name="jobTitle"]')).toHaveValue("Software Engineer Intern", { timeout: 30_000 });
+  await expect(jobs.nth(0).locator('input[name="companyName"]')).toHaveValue("Acme");
+  await expect(jobs.nth(1).locator('input[name="jobTitle"]')).toHaveValue("Research Assistant", { timeout: 30_000 });
+  await expect(jobs.nth(1).locator('input[name="companyName"]')).toHaveValue("Contoso");
+  const schools = page.locator('#education > [role="group"] input[name="schoolName"]');
+  await expect(schools).toHaveCount(2, { timeout: 30_000 });
+  await expect(schools.nth(0)).toHaveValue("Penn State", { timeout: 30_000 });
+  await expect(schools.nth(1)).toHaveValue("Contoso University", { timeout: 30_000 });
+});
+
 test("the captured Workday Resume/CV input receives the generated resume", async () => {
   const workdayOrigin = atsOrigins[0];
   await context.route(`${workdayOrigin}/**`, (route) =>
@@ -6277,6 +6362,53 @@ test(`Ashby location searches select only an exact owned option and never retain
   expect(paused.value).toBe("");
 });
 }
+
+test("Ashby's Location is searched and picked in a tab that sends no focus events, after the applicant's own keys", async () => {
+  // Reported on Ashby: a background tab sends no focus event, so the focus
+  // the fill gave Location read as the applicant's (they had pressed keys
+  // seconds before) and nothing was typed.
+  const page = await context.newPage();
+  await page.goto(`${origin}/ashby-location-no-focus-events`);
+  await page.evaluate(() => {
+    const shell = document.createElement("div");
+    shell.className = "ashby-application-form-field-entry";
+    shell.dataset.fieldPath = "_systemfield_location";
+    shell.innerHTML = '<label for="current-location">Location</label><input id="current-location" class="ashby-application-form-input-autocomplete" role="combobox" aria-autocomplete="list" aria-expanded="false" required>';
+    document.querySelector('[name="country"]')!.closest("label")!.replaceWith(shell);
+    const input = shell.querySelector<HTMLInputElement>("input")!;
+    window.addEventListener("focus", (event) => { if (event.target === input) event.stopImmediatePropagation(); }, true);
+    (window as any).choiceClicks = 0;
+    input.addEventListener("input", () => {
+      shell.querySelector('[role="listbox"]')?.remove();
+      if (!input.value) return;
+      input.setAttribute("aria-expanded", "true");
+      input.setAttribute("aria-controls", ":locations:");
+      setTimeout(() => {
+        const list = document.createElement("div");
+        list.id = ":locations:";
+        list.role = "listbox";
+        for (const label of ["Phoenix, United States", "Phoenixville, United States"]) {
+          const option = document.createElement("div");
+          option.role = "option";
+          option.textContent = label;
+          option.addEventListener("click", () => {
+            (window as any).choiceClicks++;
+            input.value = label;
+            input.setAttribute("aria-expanded", "false");
+            list.remove();
+          });
+          list.append(option);
+        }
+        shell.append(list);
+      }, 100);
+    });
+  });
+  await background(page);
+  await page.keyboard.press("Shift");
+  await enqueue([page]);
+  await expect(page.locator("#current-location")).toHaveValue("Phoenix, United States", { timeout: 30000 });
+  expect(await page.evaluate(() => (window as any).choiceClicks)).toBe(1);
+});
 
 test("a combobox that opens on focus and lists plain-button options is chosen from, searching once only when its list lacks the answer", async () => {
   // C3 AI's own form over Greenhouse (046094a1bc36): a press does not open

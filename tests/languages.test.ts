@@ -107,3 +107,15 @@ test("a SuccessFactors Language Skills row and an education Result are answered"
   assert.ok(ask("Result", "Formal Education", 0)?.choices?.includes("In Progress"));
   assert.ok(ask("Result", "Formal Education", 1)?.choices?.includes("Graduated"));
 });
+
+// A Workday list on the five proficiency levels ("1 - Elementary
+// Proficiency" to "5 - Native or Bilingual Proficiency"): every skill of a
+// native speaker was left on Select One (report d547e945).
+test("each level names its step on the five-level proficiency scale", () => {
+  const scale = ["1 - Elementary Proficiency", "2 - Limited Working Proficiency", "3 - Professional Working Proficiency", "4 - Full Professional Proficiency", "5 - Native or Bilingual Proficiency"];
+  const pick = (level: "native" | "fluent" | "intermediate" | "basic") => levelChoices(level).find((choice) => scale.includes(choice));
+  assert.equal(pick("native"), scale[4]);
+  assert.equal(pick("fluent"), scale[3]);
+  assert.equal(pick("intermediate"), scale[2]);
+  assert.equal(pick("basic"), scale[0]);
+});

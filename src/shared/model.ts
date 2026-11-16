@@ -473,7 +473,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-16-pinpoint-labels-application-date";
+export const CONTENT_VERSION = "2026-11-16-ashby-focus-workday-languages";
 export type Proposal = {
   fieldId: string;
   value: string;

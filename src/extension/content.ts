@@ -1990,6 +1990,10 @@ if (!window.__applicationLane) {
         assertSafe("Custom selection paused or superseded.");
         openingRequested = true;
         ashbyLocation.focus({ preventScroll: true });
+        // Its own focus, though a tab out of view sends no focus event: the
+        // applicant's earlier keys then read as theirs here, and Ashby's
+        // Location was refused before anything was typed.
+        acquireOpenedFocus();
         assertSafe("Custom selection paused or superseded.");
         searchValue = proposal.value.trim();
         ownedAutocompleteSearches.set(ashbyLocation, searchValue);
@@ -3200,8 +3204,12 @@ if (!window.__applicationLane) {
         });
       } catch (error) {
         // Skipped for the rest of this fill only; the next request retries.
-        record.failedOperation = operation;
-        record.failedValue = proposal.value;
+        // A field refused only for focus is tried again: the focus may be
+        // this fill's own, or the applicant's may have moved on.
+        if (!/has focus outside this selection\.?$/.test((error as Error).message)) {
+          record.failedOperation = operation;
+          record.failedValue = proposal.value;
+        }
         record.fillWarning = (error as Error).message.slice(0, 350);
         results.push({
           id: proposal.fieldId,

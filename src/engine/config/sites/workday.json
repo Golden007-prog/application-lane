@@ -351,14 +351,14 @@
             ]
           ],
           "containerPath": [
-            ".//div[@role='group'][starts-with(@aria-labelledby,'Work-Experience-') or starts-with(@aria-labelledby,'Work-History-')][contains(@aria-labelledby,'-%NUMBER0%-panel')]",
+            ".//div[@role='group'][starts-with(@aria-labelledby,'Work-Experience-') or starts-with(@aria-labelledby,'Work-History-') or starts-with(@aria-labelledby,'Professional-Experience-')][contains(@aria-labelledby,'-%NUMBER0%-panel')]",
             ".//*[@data-automation-id='workExperience-%NUMBER0%']"
           ],
           "addButtonPath": [
-            ".//div[@role='group'][starts-with(@aria-labelledby,'Work-Experience-') or starts-with(@aria-labelledby,'Work-History-')][contains(@aria-labelledby,'-section')]//button[@data-automation-id='add-button']"
+            ".//div[@role='group'][starts-with(@aria-labelledby,'Work-Experience-') or starts-with(@aria-labelledby,'Work-History-') or starts-with(@aria-labelledby,'Professional-Experience-')][contains(@aria-labelledby,'-section')]//button[@data-automation-id='add-button']"
           ],
           "confirmAddedPath": [
-            ".//div[@role='group'][starts-with(@aria-labelledby,'Work-Experience-') or starts-with(@aria-labelledby,'Work-History-')][contains(@aria-labelledby,'-%NUMBER0%-panel')]",
+            ".//div[@role='group'][starts-with(@aria-labelledby,'Work-Experience-') or starts-with(@aria-labelledby,'Work-History-') or starts-with(@aria-labelledby,'Professional-Experience-')][contains(@aria-labelledby,'-%NUMBER0%-panel')]",
             ".//*[@data-automation-id='workExperience-%NUMBER0%']"
           ]
         }
