@@ -70,7 +70,7 @@ const topics: [Topic, RegExp][] = [
   // A program's own start date, asked Yes or No ("This program has a fixed
   // start date mentioned in the job advert. Are you available to join on
   // that date?", a SmartRecruiters screening step).
-  ["start", /\b(available|able) to (join|start|begin)\b.*\bon (that|the|this|its) (start )?date\b|\b(earliest|soonest)\b.*\bstart\b|\bwhen (can|could|would) you (be able to )?start\b|\b(what|which) date (are|would|will) you (be )?available to (start|begin)\b|\bwhen (are|will|would) you (be )?available to (start|begin)\b|^(desired |available |earliest |preferred )?start date$|^date available$|^available start date$|\bdate available to start\b/],
+  ["start", /\b(available|able) to (join|start|begin)\b.*\bon (that|the|this|its) (start )?date\b|\b(earliest|soonest)\b.*\bstart\b|\bwhen (can|could|would) you (be able to )?start\b|\bhow soon\b.*\b(able|ready|available|can|could|would)\b.*\b(start|join|begin)\b|\b(what|which) date (are|would|will) you (be )?available to (start|begin)\b|\bwhen (are|will|would) you (be )?available to (start|begin)\b|^(desired |available |earliest |preferred )?start date$|^date available$|^available start date$|\bdate available to start\b/],
   ["fullTime", /\b(available|able|willing|commit)\b.*\b(full time|monday( through| to| thru)? friday|40 hours)\b/],
   ["assessment", /\b(take home|coding (assessment|challenge|test)|technical assessment|online assessment)\b/],
   ["adult", /\b(at least|over|older than) (the age of )?18\b|\b18 years( of age)? (or older|and older|old or older)\b/],

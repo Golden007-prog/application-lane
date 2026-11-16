@@ -13709,6 +13709,41 @@ test("Yes/No questions sharing a fieldset are read by their own labels, and one 
   expect(radios("Will you now").every((field) => !field.protected)).toBe(true);
 });
 
+// Pinpoint's application form: the Yes/No questions are cards in one
+// "Questions" fieldset, each question a <label> whose "for" names no control
+// over radios whose aria-labelledby holds "<question> yes", and the State is a
+// react-select under a plain <label> with no "for" (its input's id the field's
+// name). Each radio read as the section ("3.Questions"), each option as the
+// question again, and the State by its name.
+test("Pinpoint's Yes/No cards and State list are read by their question and label", async () => {
+  const card = (n: number, text: string) =>
+    `<div class="pad-v-3"><label class="external-form__label" for="q_${n}_boolean_answer"><span class="external-form__label--title external-form__label--required">${text}</span></label><div class="frow">${[["true", "Yes", "yes"], ["false", "No", "no"]].map(([value, shown, spoken]) => `<div class="col-1-2"><div class="checkable-input"><div id="answer-label-${n}-${value}" style="display: none;">${text} ${spoken}</div><input class="checkable-input__input" type="radio" id="q_${n}_boolean_answer_${value}" name="q[${n}][boolean_answer]" aria-labelledby="answer-label-${n}-${value}"><label aria-labelledby="answer-label-${n}-${value}" class="checkable-input__label" for="q_${n}_boolean_answer_${value}">${shown}</label></div></div>`).join("")}</div></div>`;
+  await context.route(`${origin}/pinpoint-cards`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><title>Job Application</title><form onsubmit="return false">
+        <fieldset><legend><span>1.</span> Personal Details</legend>
+          <div class="col-1-1"><label class="external-form__label external-form__label--required">State</label><div class="react-select"><div class="react-select__control"><div class="react-select__value-container"><div class="react-select__placeholder">State</div><div class="react-select__input-container"><input class="react-select__input" id="application_form[application][town]" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-haspopup="true"></div></div></div></div></div>
+          <div class="col-1-1"><label class="external-form__label external-form__label--required">Zipcode</label><input type="text" name="application_form[application][postcode]" id="postcode" required></div>
+        </fieldset>
+        <fieldset><legend><span>3.</span> Questions</legend>
+          ${card(13, "Are you legally authorized to work in the United States?")}
+          ${card(14, "Will you now require visa sponsorship?")}
+        </fieldset></form>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${origin}/pinpoint-cards`);
+  await panel.bringToFront();
+  const tabId = await panel.evaluate(async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url)!.id!, page.url());
+  const fields = (await ui({ type: "SCAN_TAB", tabId })).observation.fields as { label: string; kind: string; options: string[] }[];
+  const radios = fields.filter((field) => field.kind === "radio");
+  expect(radios.map((field) => field.label)).toEqual(["Are you legally authorized to work in the United States?", "Will you now require visa sponsorship?"]);
+  expect(radios.map((field) => field.options)).toEqual([["Yes", "No"], ["Yes", "No"]]);
+  expect(fields.map((field) => field.label)).toContain("State");
+  expect(fields.map((field) => field.label)).toContain("Zipcode");
+});
+
 // one employer's Workday: a questionnaire date's
 // Month, Day and Year are named only so; the question is the field's legend.
 test("a Workday questionnaire date's parts carry their question", async () => {

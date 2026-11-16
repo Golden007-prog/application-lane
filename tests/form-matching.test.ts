@@ -2084,6 +2084,9 @@ test("a degree type list takes the degree under way, and a Today's Date box toda
   assert.equal(answer("Please select your degree type", { kind: "combobox", options: ["BA/BS", "Masters", "PhD", "N/A"] }), "Masters");
   const today = new Date();
   assert.equal(answer("Today's Date"), `${String(today.getMonth() + 1).padStart(2, "0")}/${String(today.getDate()).padStart(2, "0")}/${today.getFullYear()}`);
+  // An Ashby "Application Date" calendar: the day it is filled (report d27d766a).
+  assert.ok(answer("Application Date", { kind: "datepicker" }), "Application Date left empty");
+  assert.match(answer("Application Date", { kind: "datepicker" })!, new RegExp(`${today.getFullYear()}`));
 });
 
 // one employer's Race/Ethnicity: its label defines each category
@@ -2639,4 +2642,23 @@ test("a referral by a current employee that names no company is No when no refer
   assert.equal(ask(who), "No");
   const vouched = Object.assign(profileSchema.parse({ ...who, references: [{ name: "Jordan Lee", relationship: "Director at Acme", phone: "", email: "" }] }), { applyingTo: who.applyingTo });
   assert.equal(ask(vouched), undefined);
+});
+
+// Pinpoint's form: the graduation date is three selects named "<question> -
+// Day", "- Month", "- Year"; the profile holds only the month, and the site
+// rejects a date without its day. Its zip box is "Zipcode", and "how soon"
+// asks the start date.
+test("a graduation date's Day list beside Month and Year takes the 1st, and a Zipcode and a how-soon start are answered", () => {
+  const monthOnly = profileSchema.parse({ ...profile, education: [{ ...profile.education[0], endDate: "2099-05" }], answers: [{ question: "When can you start?", answer: "Immediately" }] });
+  const question = "Please indicate your most recent or expected graduation year/date (for your bachelor's, master's, or PhD).";
+  const days = Array.from({ length: 31 }, (_, i) => String(i + 1));
+  const part = (name: string, options: string[]) => proposals([field(`${question} - ${name}`, { kind: "select", options })], monthOnly)[0]?.value;
+  assert.equal(part("Day", days), "1");
+  assert.equal(part("Month", ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"]), "May");
+  assert.equal(part("Year", ["2099", "2098"]), "2099");
+  // A day the profile holds is used.
+  const held = profileSchema.parse({ ...monthOnly, education: [{ ...profile.education[0], endDate: "2099-05-17" }] });
+  assert.equal(proposals([field(`${question} - Day`, { kind: "select", options: days })], held)[0]?.value, "17");
+  assert.equal(deterministicAnswer(field("Zipcode"), monthOnly), monthOnly.postalCode);
+  assert.equal(proposals([field("If offered the position, how soon would you be able to start?", { kind: "combobox", required: false })], monthOnly)[0]?.value, "Immediately");
 });

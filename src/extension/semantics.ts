@@ -264,8 +264,17 @@ export function fieldLabel(element: Control): string {
       titles.filter((label) => label.compareDocumentPosition(element) & Node.DOCUMENT_POSITION_FOLLOWING).at(-1) ||
       titles[0];
     const name = element instanceof HTMLInputElement ? element.name : "";
+    // A fieldset that holds several questions is titled for the section
+    // ("3. Questions"), not for this one: a radio's own title (its "for" begins
+    // its id) names the question there (Pinpoint's Yes/No cards).
+    const sectionFieldset = group?.matches("fieldset") &&
+      new Set([...group.querySelectorAll<HTMLInputElement>('input[type="radio"]')].map((radio) => radio.name || radio.id)).size > 1;
+    const ownTitle = sectionFieldset
+      ? titles.find((label) => label.htmlFor && element.id.startsWith(`${label.htmlFor}_`))
+      : undefined;
     return (
       cleanLabel(
+        labelText(ownTitle || null) ||
         labelText(group?.querySelector("legend") || null) ||
           group?.getAttribute("aria-label") ||
           labelled ||
@@ -438,6 +447,11 @@ function associatedLabel(element: Control): string {
   // A web component's own label attribute names it (SmartRecruiters'
   // <spl-radio label="Yes">).
   const component = element.localName.includes("-") ? element.getAttribute("label") || "" : "";
+  // A radio read through an aria-labelledby that adds its question to the
+  // option ("Are you eligible? yes") is the option its own label says ("Yes").
+  if (labels && labelled && element.matches('input[type="radio"],[role="radio"]') && labelled.length > labels.length &&
+      labelled.toLowerCase().endsWith(labels.toLowerCase()))
+    return cleanLabel(labels);
   return cleanLabel(labelled || element.getAttribute("aria-label") || labels || component);
 }
 
@@ -763,6 +777,14 @@ export function ownLabel(element: Control): string {
   if (element.matches("input.ashby-application-form-input-autocomplete")) {
     const title = element.parentElement?.previousElementSibling;
     if (title?.matches("label.ashby-application-form-question-title") && labelText(title)) return labelText(title);
+  }
+  // A react-select drawn under a plain <label> with no "for" (Pinpoint's
+  // Country and State), its input's id only the field's name: the label just
+  // before the component names it.
+  if (element.matches('input[role="combobox"]') && !(element as HTMLInputElement).labels?.length) {
+    const shell = element.closest(".react-select");
+    const title = shell?.previousElementSibling;
+    if (title?.matches("label") && !(title as HTMLLabelElement).htmlFor && labelText(title)) return labelText(title);
   }
   const cellAsked = icimsCellQuestion(element);
   if (cellAsked) return cellAsked;

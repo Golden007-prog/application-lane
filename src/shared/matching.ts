@@ -268,7 +268,7 @@ export function deterministicAnswer(
     [/^(street |mailing |home )?address( line 1)?$/, "address"],
     [secondAddressLine, "addressLine2"],
     // One name or two: "Zip", "Postal code", "Postcode/ZIP".
-    [/^((zip|postal|post ?code)( code)? ?){1,2}$|^please enter the zip code of your primary residence in the united states$|^please provide your post code zip code$/, "postalCode"],
+    [/^((zip ?code|zip|postal|post ?code)( code)? ?){1,2}$|^please enter the zip code of your primary residence in the united states$|^please provide your post code zip code$/, "postalCode"],
     // Also asked as a request, instructions after it: "Please provide your
     // LinkedIn Profile url. Instruction: Navigate to…" (one employer's Workday).
     [/^linkedin( profile| url| profile url)?$|^(please )?((provide|enter|share|add|paste|include) )?(your )?linkedin( profile)?( page)?( url| link| address)\b/, "linkedin"],
@@ -742,11 +742,13 @@ export function profileAnswer(
     // Day (read back as 02/20, Woodgrove).
     // Also with no colon: Oracle's "Projected Completion Date Month" was
     // written "May 2027" (eihu).
-    const part = field.label.match(/(?:\?\s*:?|[.:]\s*:|\bdate\s*:|\bdate\s+)\s*(month|day|year)\s*$/i)?.[1].toLowerCase();
+    const part = field.label.match(/(?:\?\s*:?|[.:]\s*:|\bdate\s*:|\bdate\s+|\s-\s)\s*(month|day|year)\s*$/i)?.[1].toLowerCase();
     if (part === "year") return { value: year };
     if (part === "month") return { value: month, choices: [month.slice(0, 3), monthNumber, String(Number(monthNumber))] };
-    // A day the profile does not hold is the 1st where the question says so.
-    if (part === "day") return day ? { value: String(Number(day)), choices: [day] } : /\bfirst of the month\b/i.test(field.label) ? { value: "1", choices: ["01"] } : undefined;
+    // A day the profile does not hold is the 1st where the question says so,
+    // and for a list of days (a required Day select rejects the date without
+    // one; Pinpoint's "- Day" beside its Month and Year).
+    if (part === "day") return day ? { value: String(Number(day)), choices: [day] } : /\bfirst of the month\b/i.test(field.label) || field.options.length ? { value: "1", choices: ["01"] } : undefined;
     // A question for the month alone ("Please select your Graduation
     // Month", its year asked apart), or a list of only months, takes the
     // month: "December 2027" matched none of one employer's twelve.
@@ -956,8 +958,11 @@ export function profileAnswer(
     return listed.length === 1 ? { value: listed[0] } : undefined;
   }
   // "Today's Date" beside the applicant's typed name: the day it is filled.
-  if (/^(?:today s date|todays date|current date|today)$/.test(label) && !field.options.length) {
-    const written = writtenDate(localDate(), field, profile);
+  // So is an "Application Date" (an Ashby calendar, report d27d766a): a
+  // calendar takes the date itself and is driven to it.
+  if (/^(?:today s date|todays date|current date|today|application date|date of application)$/.test(label) && !field.options.length) {
+    const written = writtenDate(localDate(), field.kind === "datepicker" ? { ...field, kind: "text" } : field, profile);
+    if (field.kind === "datepicker") return { value: written || localDate() };
     return written ? { value: written } : undefined;
   }
   const completion = label.match(/^(?:completion|graduation) date (?:of|for) (?:your )?highest degree( mm yyyy)?$/);
