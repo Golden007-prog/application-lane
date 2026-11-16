@@ -2023,14 +2023,9 @@ if (!window.__applicationLane) {
       let searchedAt = 0;
       const canSearch = () => Boolean(typeahead && !searchWritten && proposal.value.trim() &&
         document.activeElement === typeahead && ownsFocus);
-      // What a react-select is searched for: the proposal's value, then each
-      // of its shorter choices when the list answers "No options" ("United
-      // States of America" is in no Country list that says "United States").
-      const terms = [...new Set([proposal.value, ...(proposal.choices || [])].map((t) => t.trim()).filter(Boolean))];
-      let termAt = 0;
       const search = async (listed: string) => {
         searchInput = typeahead!;
-        searchValue = reactSelectBox ? terms[termAt] : proposal.value.trim();
+        searchValue = proposal.value.trim();
         ownedAutocompleteSearches.set(typeahead!, searchValue);
         writing = true;
         try {
@@ -2039,10 +2034,7 @@ if (!window.__applicationLane) {
           // assigned value is read back empty and the list stays unloaded
           // (Higher's School). Typed with real keys, the box kept
           // focused for the pick; assigned only where keys cannot be sent.
-          // A React-controlled search (Pinpoint's react-select) reverts a
-          // value assigned from a script on its next render, so it never
-          // sees the text: it is typed with real keys as well.
-          const typed = (typeahead!.matches("input.cx-select-input") || reactSelectBox) &&
+          const typed = typeahead!.matches("input.cx-select-input") &&
             await typeTrusted(command, typeahead!, searchValue, safe, new AbortController().signal, true, false, true);
           assertSafe("Custom selection paused or superseded.");
           if (!typed) {
@@ -2419,15 +2411,8 @@ if (!window.__applicationLane) {
           // Salary Range lists ranges, and "$100,000" is in none of their
           // words): the text is taken out again, and the whole
           // list is read and chosen from by what each entry covers.
-          if (reactSelectBox && !options.length && searchWritten && termAt + 1 < terms.length &&
-              Date.now() - searchedAt > 500 && list.querySelector('[class*="menu-notice"]')) {
-            termAt++;
-            searchWritten = false;
-            await search("");
-            continue;
-          }
           if (!options.length && typeahead && searchWritten && !searchCleared && Date.now() - searchedAt > 1200 &&
-              list.querySelector(reactSelectBox ? '[class*="menu-notice"]' : '[class*="no-results"]')) {
+              list.querySelector('[class*="no-results"]')) {
             searchCleared = true;
             writing = true;
             try {
