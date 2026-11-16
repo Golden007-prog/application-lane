@@ -2672,3 +2672,12 @@ test("a street the site holds in its listing's words is the saved street, not se
   // Another street is still corrected.
   assert.equal(proposals([field("Address", { kind: "combobox", value: "200 East Mill Way", siteValue: true })], saved)[0]?.value, "100 E. Mill Way");
 });
+
+// An Ashby form asked "What city do you live in?" and "Have you been employed
+// by Acme before?"; the profile holds both answers (report fab8c1fc).
+test("What city do you live in takes the saved city, and employed by the company before is answered", () => {
+  const applicant = Object.assign(profileSchema.parse({ ...profile, city: "Blacksburg", state: "Virginia", country: "United States", neverWorkedForApplyingCompanies: true }), { applyingTo: { company: "Acme", title: "Intern", country: "US" } });
+  const city = proposals([field("What city do you live in?", { kind: "combobox", options: [] })], applicant)[0]?.value;
+  assert.ok(city && city.startsWith("Blacksburg"), String(city));
+  assert.equal(proposals([field("Have you been employed by Acme before?", { kind: "radio", options: ["Yes", "No"] })], applicant)[0]?.value, "No");
+});

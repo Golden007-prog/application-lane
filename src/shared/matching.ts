@@ -261,7 +261,7 @@ export function deterministicAnswer(
     // profile's phoneCountryCode.)
     [/^((home|cell|cellular|mobile|primary) )?(phone|mobile|telephone)( number)?$/, "phone"],
     [/^(city|current city|location city|current location)$/, "city"],
-    [/^where (do you( currently)? live|are you( currently)? (located|based))$/, "city"],
+    [/^where (do you( currently)? live|are you( currently)? (located|based))$|^(what|which) city do you( currently)? live in$/, "city"],
     // "State / District", "State / Province / Region".
     [stateLabel, "state"],
     [countryLabel, "country"],
@@ -893,7 +893,7 @@ export function profileAnswer(
   if (label === "address city region country" && profile.city && profile.country)
     return { value: [profile.city, profile.state, profile.country].filter(Boolean).join(", ") };
   if (
-    /^(city|current city|location|location city|current location|where (do you( currently)? live|are you( currently)? (located|based)))( city( state)?( country)?)?$/.test(label) &&
+    (/^(city|current city|location|location city|current location|where (do you( currently)? live|are you( currently)? (located|based)))( city( state)?( country)?)?$/.test(label) || /^(what|which) city do you( currently)? live in$/.test(label)) &&
     (label !== "location" || !/work|employment|experience|education/.test(normalize(field.section || ""))) &&
     profile.city
   ) {

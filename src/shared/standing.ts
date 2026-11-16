@@ -78,7 +78,7 @@ const topics: [Topic, RegExp][] = [
   // one employer's "Have you ever provided services to an employer or any of its
   // subsidiaries/affiliates as a contingent worker or contractor…"
   // is the same question.
-  ["priorEmployment", /\b(previously|ever|formerly|in the past)\b.*\b(worked|employed|been employed|an employee|a contractor|contractor|contingent worker|provided services)\b|\bformer employee\b|\b(current or former|former or current)\b.*\b(intern|employee|page|contractor|worker)\b|\bworked (for|at|with) us before\b|\b(worked|been employed) (for|at|by) .+ (in|within|during) the (past|last)\b/],
+  ["priorEmployment", /\b(previously|ever|formerly|in the past)\b.*\b(worked|employed|been employed|an employee|a contractor|contractor|contingent worker|provided services)\b|\bformer employee\b|\b(current or former|former or current)\b.*\b(intern|employee|page|contractor|worker)\b|\bworked (for|at|with) us before\b|\b(worked|been employed) (for|at|by) .+ (in|within|during) the (past|last)\b|\b(worked|been employed|employed) (for|at|by|with) .+ before\b/],
   // Asked on most SuccessFactors forms, and left to the applicant each time
   //: "Are you able to perform the essential job
   // functions … with or without reasonable accommodation?", "Military
