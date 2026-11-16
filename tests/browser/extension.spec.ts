@@ -6410,6 +6410,78 @@ test("Ashby's Location is searched and picked in a tab that sends no focus event
   expect(await page.evaluate(() => (window as any).choiceClicks)).toBe(1);
 });
 
+test("Pinpoint's react-select lists are opened and picked in a tab that sends no focus events", async () => {
+  // Reported on Pinpoint: its react-select (control > input) opens on a press
+  // only once focus has been seen, and a tab out of view sends no focus
+  // event, so the one press the fill made opened nothing and the field was
+  // given up on. Its menu also opens from typing.
+  const page = await context.newPage();
+  await page.goto(`${origin}/pinpoint-react-select-no-focus-events`);
+  await page.evaluate(() => {
+    (window as any).picks = [];
+    const make = (id: string, label: string, options: string[]) => {
+      const shell = document.createElement("div");
+      shell.className = "col-1-1";
+      shell.innerHTML = `<label class="external-form__label">${label}</label><div class="react-select"><div class="react-select__control"><div class="react-select__value-container"><div class="react-select__single-value"></div><div class="react-select__input-container"><input class="react-select__input" id="${id}" type="text" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-haspopup="true"></div></div></div></div>`;
+      const control = shell.querySelector<HTMLElement>(".react-select__control")!;
+      const input = shell.querySelector<HTMLInputElement>("input")!;
+      const shown = shell.querySelector<HTMLElement>(".react-select__single-value")!;
+      const close = () => {
+        shell.querySelector(".react-select__menu")?.remove();
+        input.setAttribute("aria-expanded", "false");
+        input.removeAttribute("aria-controls");
+      };
+      const open = () => {
+        close();
+        const typed = input.value.toLowerCase();
+        const menu = document.createElement("div");
+        menu.className = "react-select__menu";
+        const list = document.createElement("div");
+        list.id = `${input.id}-listbox`;
+        list.setAttribute("role", "listbox");
+        for (const text of options.filter((o) => o.toLowerCase().includes(typed))) {
+          const option = document.createElement("div");
+          option.className = "react-select__option";
+          option.setAttribute("role", "option");
+          option.textContent = text;
+          option.addEventListener("click", () => {
+            (window as any).picks.push(text);
+            shown.textContent = text;
+            input.value = "";
+            close();
+          });
+          list.append(option);
+        }
+        menu.append(list);
+        control.append(menu);
+        input.setAttribute("aria-expanded", "true");
+        input.setAttribute("aria-controls", list.id);
+      };
+      // As react-select: only the left button, and the press that finds the
+      // input unfocused only focuses it (the menu then opens from its focus
+      // event, which this tab never sends).
+      control.addEventListener("mousedown", (event) => {
+        if (event.button !== 0) return;
+        if (document.activeElement !== input) input.focus();
+        else if (!shell.querySelector(".react-select__menu")) open();
+      });
+      input.addEventListener("input", open);
+      window.addEventListener("focus", (event) => { if (event.target === input) event.stopImmediatePropagation(); }, true);
+      return shell;
+    };
+    document.querySelector('[name="country"]')!.closest("label")!.replaceWith(
+      make("application_form[application][country]", "Country", ["Canada", "United States", "United Kingdom"]));
+    document.querySelector('[name="phone"]')!.closest("label")!.replaceWith(
+      make("application_form[application][town]", "City", ["Phoenix", "Phoenixville", "Glendale"]));
+  });
+  await background(page);
+  await page.keyboard.press("Shift");
+  await enqueue([page]);
+  await expect.poll(async () => page.evaluate(() => (window as any).picks), { timeout: 30000 }).toContain("United States");
+  await expect(page.locator(".react-select__single-value")).toHaveText(["Phoenix", "United States"]);
+  expect(await page.evaluate(() => (window as any).picks)).toEqual(["Phoenix", "United States"]);
+});
+
 test("a combobox that opens on focus and lists plain-button options is chosen from, searching once only when its list lacks the answer", async () => {
   // C3 AI's own form over Greenhouse (046094a1bc36): a press does not open
   // the list, options are <button type="button" role="option">, and the school
@@ -17112,12 +17184,12 @@ test("a list drawn as a link with no address is chosen from", async () => {
 // "— Enter Manually —", and the same address listed more than once.
 test("an iCIMS street search picks the listing of the saved street in its city", async () => {
   test.setTimeout(120000);
-  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, address: "100 E. Mill Way", addressLine2: "", city: "Blacksburg", state: "VA", postalCode: "24060" } });
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, address: "100 E. Mill Way", addressLine2: "", city: "Blacksburg", state: "VA", postalCode: "24060", country: "United States" } });
   const site = atsOrigins[4];
   await context.route(`${site}/jobs/3/intern/street**`, (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><title>Profile</title><body><form onsubmit="return false"><div class="iCIMS_TableRow">
+      body: `<!doctype html><title>Profile</title><body><form onsubmit="return false">${[["Country", ["Canada", "United States"]], ["State", ["Arizona", "Virginia"]]].map(([name, items]: any) => `<div class="iCIMS_TableRow"><div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.Address${name}" class="iCIMS_LabelText">${name === "State" ? "State/Province" : name}</label></div><div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.Address${name}" name="-1_PersonProfileFields.Address${name}" data-label="${name}" class="iCIMS_Forms_Global customFieldContainer iCIMS_Forms_DropDown iCIMS_Forms_RequiredField form-control dropdown-hide" style="display:none" aria-required="true" i_required="true"><option legacy="true" value="" selected=""></option></select><a id="-1_PersonProfileFields.Address${name}_icimsDropdown" class="dropdown-select plain-list" data-name="${name}" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.Address${name}" aria-required="true" role="combobox" aria-label="${name === "State" ? "State/Province" : name}"><span class="dropdown-text"><span class="dropdown-placeholder">— Make a Selection —</span></span></a><div class="dropdown-container dropdown-invisible"><ul class="dropdown-results" role="listbox">${items.map((item: string, index: number) => `<li class="dropdown-result result-selectable" role="option" dropdown-index="${index}" title="${item}" aria-label="${item}">${item}</li>`).join("")}</ul></div></div></div>`).join("")}<div class="iCIMS_TableRow">
         <div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.AddressStreet1" class="iCIMS_LabelText">Address</label></div>
         <div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.AddressStreet1" name="-1_PersonProfileFields.AddressStreet1" data-label="Address" class=" iCIMS_Forms_Global customFieldContainer iCIMS_Forms_TypeToSearchTextFieldDropDown iCIMS_Forms_RequiredField form-control dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1" icimsdropdown-selected="" aria-required="true" i_required="true" role="combobox" aria-expanded="false"><option legacy="true" selected=""></option></select><a id="-1_PersonProfileFields.AddressStreet1_icimsDropdown" class="dropdown-select" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.AddressStreet1" aria-required="true" role="combobox" aria-label="Address"><span id="-1_PersonProfileFields.AddressStreet1_fakeSelected_icimsDropdown" class="dropdown-text"><span class="dropdown-placeholder">-Select-</span></span><div class="dropdown-arrow-container"><i class="dropdown-arrow"></i></div></a><div id="-1_PersonProfileFields.AddressStreet1_icimsDropdown_ctnr" class="dropdown-container dropdown-invisible" aria-expanded="false"><input type="text" class="dropdown-search" autocomplete="off" placeholder="— Type to Search —" title="— Type to Search —" aria-label="— Type to Search —" role="combobox" aria-autocomplete="list"><div aria-live="polite"><ul id="-1_PersonProfileFields.AddressStreet1_dropdown-results" class="dropdown-results" role="listbox"><li class="dropdown-result result-selectable" role="option" dropdown-index="-2" title="— Enter Manually —" aria-label="— Enter Manually —">— Enter Manually —</li></ul></div></div></div>
       </div>
@@ -17149,8 +17221,23 @@ test("an iCIMS street search picks the listing of the saved street in its city",
           window.picks.push(item.textContent);
           if (item.getAttribute("dropdown-index") === "-2") return;
           anchor.querySelector(".dropdown-text").textContent = item.textContent;
+          // As the site does on a street pick: the address block is rewritten,
+          // Country and State emptied.
+          for (const plain of document.querySelectorAll("a.plain-list")) plain.querySelector(".dropdown-text").innerHTML = '<span class="dropdown-placeholder">— Make a Selection —</span>';
           show(false);
         });
+        // Country and State are plain lists, drawn open on a click.
+        for (const plain of document.querySelectorAll("a.plain-list")) {
+          const box = plain.nextElementSibling;
+          plain.addEventListener("mousedown", () => { box.classList.toggle("dropdown-invisible"); plain.setAttribute("aria-expanded", String(!box.classList.contains("dropdown-invisible"))); });
+          box.addEventListener("click", (event) => {
+            const item = event.target.closest("li");
+            if (!item) return;
+            plain.querySelector(".dropdown-text").textContent = item.textContent;
+            box.classList.add("dropdown-invisible");
+            plain.setAttribute("aria-expanded", "false");
+          });
+        }
         draw("");
       </script></body>`,
     }),
@@ -17160,6 +17247,10 @@ test("an iCIMS street search picks the listing of the saved street in its city",
   await enqueue([page]);
   await expect(page.locator('[id="-1_PersonProfileFields.AddressStreet1_icimsDropdown"] .dropdown-text')).toHaveText("100 East Mill Way, Blacksburg, VA 24060", { timeout: 90000 });
   expect(await page.evaluate(() => (window as any).picks)).toEqual(["100 East Mill Way, Blacksburg, VA 24060"]);
+  // The street was picked before Country and State, so the site's rewrite
+  // of the address block left them as the fill set them.
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressCountry_icimsDropdown"] .dropdown-text')).toHaveText("United States", { timeout: 90000 });
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressState_icimsDropdown"] .dropdown-text')).toHaveText("Virginia");
   // The fill went on to the rest of the step and ended, the street not proposed again.
   await expect.poll(async () => (await state()).applications[0].status, { timeout: 90000 }).toMatch(/^(awaiting-user|ready)$/);
 });

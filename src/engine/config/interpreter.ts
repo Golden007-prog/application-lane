@@ -2115,9 +2115,15 @@ export async function interpretConfig(
   // changes, and can clear a state or city filled before it. A country not on
   // the page yet (behind a section the rules open) is tried again in its own
   // place.
+  // A street search (iCIMS' Address) comes before even that: picking a
+  // listing makes the site rewrite the address block and empty Country and
+  // State, which are then set last.
+  const streetSearch = ([, choices]: InputSelector) =>
+    choices.some((choice) => typeof choice !== "string" && choice.valueKey === "street_listing");
   const order = [
+    ...config.inputSelectors.filter(streetSearch).map((entry) => ({ entry, early: false })),
     ...config.inputSelectors.filter(([key]) => key === "country").map((entry) => ({ entry, early: true })),
-    ...config.inputSelectors.map((entry) => ({ entry, early: false })),
+    ...config.inputSelectors.filter((entry) => !streetSearch(entry)).map((entry) => ({ entry, early: false })),
   ];
   const earlyCountry = order.some(({ early }) => early);
   // Row sections put off until the others have run (see the Add button).
@@ -2935,7 +2941,7 @@ export async function interpretConfig(
           completed = true;
           break;
         }
-        const searched = /^(school|major|degree|name|discipline|country|state|education)$/.test(key)
+        const searched = /^(school|major|degree|name|discipline|country|state|education)$/.test(key) || selector.valueKey === "street_listing"
           ? await viaSearchDropdown(element, values, globals, options)
           : "unsupported";
         if (searched === "selected") {

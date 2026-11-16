@@ -27,6 +27,17 @@
       ]
     ],
     [
+      "address",
+      [
+        {
+          "path": [
+            ".//a[contains(@id,'.AddressStreet1_icimsDropdown')]"
+          ],
+          "valueKey": "street_listing"
+        }
+      ]
+    ],
+    [
       "country",
       [
         ".//a[contains(@id,'.AddressCountry_icimsDropdown')]"

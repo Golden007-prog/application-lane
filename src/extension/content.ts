@@ -1769,10 +1769,16 @@ if (!window.__applicationLane) {
     // server for what is typed. Searched once, and only after the open list
     // had no exact option. An empty box, or one the site filled in itself and
     // is to be replaced (Higher's address, "22 Mustang Dr").
+    // A react-select's own input, with no component API to drive it (the
+    // fiber was not reachable): its list is drawn only once opened, and it
+    // names it (aria-controls) only then.
+    const reactSelectBox = element instanceof HTMLInputElement &&
+      element.matches('input[role="combobox"][aria-autocomplete="list"][class*="__input"]')
+      ? element.closest<HTMLElement>('[class*="__control"]') ?? undefined : undefined;
     let typeahead = !ashbyLocation && element instanceof HTMLInputElement &&
       element.getAttribute("role") === "combobox" &&
       element.getAttribute("aria-autocomplete") === "list" &&
-      (element.getAttribute("aria-controls") || ashbyToggle(element)) &&
+      (element.getAttribute("aria-controls") || ashbyToggle(element) || reactSelectBox) &&
       (proposal.expectedValue === "" || record.siteValue) ? element : undefined;
     let searchInput: HTMLInputElement | undefined = ashbyLocation;
     let searchValue: string | undefined;
@@ -2045,9 +2051,26 @@ if (!window.__applicationLane) {
           writing = false;
         }
       };
+      const openedAt = Date.now();
+      let pressedAgain = false;
       while (Date.now() < deadline) {
         acquireOpenedFocus();
         assertSafe("Custom selection paused or superseded.");
+        // A react-select opens on a press only once its input has focus, and
+        // a tab out of view sends no focus event: the first press only focuses
+        // it. Pressed once more now that the fill holds the focus; a list that
+        // still stays shut is opened by the search typed below.
+        if (reactSelectBox && !pressedAgain && Date.now() - openedAt > 300 &&
+          element.getAttribute("aria-expanded") !== "true" && document.activeElement === element && ownsFocus) {
+          pressedAgain = true;
+          writing = true;
+          try {
+            record.writePendingAt = performance.now();
+            reactSelectBox.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, button: 0, view: window }));
+          } finally {
+            writing = false;
+          }
+        }
         // A list that never showed anything may also only answer a search.
         if (canSearch() && Date.now() > searchAfter) await search("");
         const root = element.getRootNode() as Document | ShadowRoot;

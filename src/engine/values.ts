@@ -201,6 +201,18 @@ export function canonicalValues(
     ]);
   if (rawKey === "address_2") return unique([profile.addressLine2]);
   if (rawKey === "address_3") return [];
+  // A street search lists whole addresses ("100 East Mill Way, Blacksburg, VA
+  // 24060"): the street first, then the street with its city, state and ZIP,
+  // so only the listing in the saved city is picked (iCIMS' Address). Nothing
+  // without a city: the search then has no way to tell the listings apart.
+  if (rawKey === "street_listing") {
+    const street = (profile.address || "").trim();
+    const city = (profile.city || "").trim();
+    if (!street || !city) return [];
+    const zip = (profile.postalCode || "").trim();
+    const state = (profile.state || "").trim();
+    return unique([street, [street, city, state].filter(Boolean).join(", "), [street, city, [state, zip].filter(Boolean).join(" ")].filter(Boolean).join(", ")]);
+  }
   const key = baseKey(rawKey);
   // An upload step needs no answer, only a document; it runs only in the
   // pass that is handed one (content.ts), so a placeholder lets it start.
