@@ -17263,12 +17263,51 @@ test("an iCIMS street search picks the listing of the saved street in its city",
   await context.route(`${site}/jobs/3/intern/street**`, (route) =>
     route.fulfill({
       contentType: "text/html",
-      body: `<!doctype html><title>Profile</title><body><form onsubmit="return false">${[["Country", ["Canada", "United States"]], ["State", ["Arizona", "Virginia"]]].map(([name, items]: any) => `<div class="iCIMS_TableRow"><div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.Address${name}" class="iCIMS_LabelText">${name === "State" ? "State/Province" : name}</label></div><div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.Address${name}" name="-1_PersonProfileFields.Address${name}" data-label="${name}" class="iCIMS_Forms_Global customFieldContainer iCIMS_Forms_DropDown iCIMS_Forms_RequiredField form-control dropdown-hide" style="display:none" aria-required="true" i_required="true"><option legacy="true" value="" selected=""></option></select><a id="-1_PersonProfileFields.Address${name}_icimsDropdown" class="dropdown-select plain-list" data-name="${name}" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.Address${name}" aria-required="true" role="combobox" aria-label="${name === "State" ? "State/Province" : name}"><span class="dropdown-text"><span class="dropdown-placeholder">— Make a Selection —</span></span></a><div class="dropdown-container dropdown-invisible"><ul class="dropdown-results" role="listbox">${items.map((item: string, index: number) => `<li class="dropdown-result result-selectable" role="option" dropdown-index="${index}" title="${item}" aria-label="${item}">${item}</li>`).join("")}</ul></div></div></div>`).join("")}<div class="iCIMS_TableRow">
+      body: `<!doctype html><meta charset="utf-8"><title>Profile</title><style>.dropdown-invisible, .dropdown-hide { display: none; }</style><body><form onsubmit="return false">${[["Country", ["Canada", "United States"]]].map(([name, items]: any) => `<div class="iCIMS_TableRow"><div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.Address${name}" class="iCIMS_LabelText">${name}</label></div><div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.Address${name}" name="-1_PersonProfileFields.Address${name}" data-label="${name}" class="iCIMS_Forms_Global customFieldContainer iCIMS_Forms_DropDown iCIMS_Forms_RequiredField form-control dropdown-hide" style="display:none" aria-required="true" i_required="true"><option legacy="true" value="" selected=""></option></select><a id="-1_PersonProfileFields.Address${name}_icimsDropdown" class="dropdown-select plain-list" data-name="${name}" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.Address${name}" aria-required="true" role="combobox" aria-label="${name}"><span class="dropdown-text"><span class="dropdown-placeholder">— Make a Selection —</span></span></a><div class="dropdown-container dropdown-invisible"><ul class="dropdown-results" role="listbox">${items.map((item: string, index: number) => `<li class="dropdown-result result-selectable" role="option" dropdown-index="${index}" title="${item}" aria-label="${item}">${item}</li>`).join("")}</ul></div></div></div>`).join("")}<div class="iCIMS_TableRow"><div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.AddressState" class="iCIMS_LabelText">State/Province</label></div><div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.AddressState" name="-1_PersonProfileFields.AddressState" data-label="State/Province" class="iCIMS_Forms_Global customFieldContainer iCIMS_Forms_IdDropDown iCIMS_Forms_RequiredField form-control dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1" style="display:none" aria-required="true" i_required="true"><option selected=""></option></select><a id="-1_PersonProfileFields.AddressState_icimsDropdown" class="dropdown-select" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.AddressState" aria-required="true" role="combobox" aria-label="State/Province"><span id="-1_PersonProfileFields.AddressState_fakeSelected_icimsDropdown" class="dropdown-text"><span class="dropdown-placeholder">— Make a Selection —</span></span></a><div id="-1_PersonProfileFields.AddressState_icimsDropdown_ctnr" class="dropdown-container dropdown-invisible" aria-expanded="false"><input type="text" class="dropdown-search" autocomplete="off" placeholder="— Type to Search —" title="— Type to Search —" aria-label="— Type to Search —" role="combobox" aria-autocomplete="list"><div aria-live="polite"><ul id="-1_PersonProfileFields.AddressState_dropdown-results" class="dropdown-results" role="listbox"></ul></div></div></div></div><div class="iCIMS_TableRow">
         <div class="iCIMS_InfoField iCIMS_TableCell"><label id="label_-1_PersonProfileFields.AddressStreet1" class="iCIMS_LabelText">Address</label></div>
         <div class="iCIMS_InfoData iCIMS_TableCell"><select id="-1_PersonProfileFields.AddressStreet1" name="-1_PersonProfileFields.AddressStreet1" data-label="Address" class=" iCIMS_Forms_Global customFieldContainer iCIMS_Forms_TypeToSearchTextFieldDropDown iCIMS_Forms_RequiredField form-control dropdown-hide" icimsdropdown-enabled="1" icimsdropdown-ajax="1" icimsdropdown-search="1" icimsdropdown-selected="" aria-required="true" i_required="true" role="combobox" aria-expanded="false"><option legacy="true" selected=""></option></select><a id="-1_PersonProfileFields.AddressStreet1_icimsDropdown" class="dropdown-select" aria-expanded="false" tabindex="0" aria-labelledby="label_-1_PersonProfileFields.AddressStreet1" aria-required="true" role="combobox" aria-label="Address"><span id="-1_PersonProfileFields.AddressStreet1_fakeSelected_icimsDropdown" class="dropdown-text"><span class="dropdown-placeholder">-Select-</span></span><div class="dropdown-arrow-container"><i class="dropdown-arrow"></i></div></a><div id="-1_PersonProfileFields.AddressStreet1_icimsDropdown_ctnr" class="dropdown-container dropdown-invisible" aria-expanded="false"><input type="text" class="dropdown-search" autocomplete="off" placeholder="— Type to Search —" title="— Type to Search —" aria-label="— Type to Search —" role="combobox" aria-autocomplete="list"><div aria-live="polite"><ul id="-1_PersonProfileFields.AddressStreet1_dropdown-results" class="dropdown-results" role="listbox"><li class="dropdown-result result-selectable" role="option" dropdown-index="-2" title="— Enter Manually —" aria-label="— Enter Manually —">— Enter Manually —</li></ul></div></div></div>
       </div>
       <div class="iCIMS_TableRow"><label for="note">Note</label><input id="note" name="note"></div></form><script>
         window.picks = [];
+        // State is a search list that loads only for what is typed, for the
+        // selected country: the site asks its server a second after the last
+        // key, and the answer takes a moment more.
+        const stateAnchor = document.getElementById("-1_PersonProfileFields.AddressState_icimsDropdown");
+        const stateBox = document.getElementById("-1_PersonProfileFields.AddressState_icimsDropdown_ctnr");
+        const stateSearch = stateBox.querySelector("input");
+        const stateList = stateBox.querySelector("ul");
+        const states = { "United States": ["Arizona", "Virginia"], Canada: ["Ontario"] };
+        stateAnchor.addEventListener("mousedown", () => {
+          const open = stateAnchor.getAttribute("aria-expanded") !== "true";
+          stateBox.classList.toggle("dropdown-invisible", !open);
+          stateAnchor.setAttribute("aria-expanded", String(open));
+        });
+        let stateTimer, stateReply;
+        // An emptied box drops the list and the answer still on its way.
+        stateSearch.addEventListener("input", () => {
+          if (stateSearch.value) return;
+          clearTimeout(stateTimer);
+          clearTimeout(stateReply);
+          stateList.innerHTML = "";
+        });
+        stateSearch.addEventListener("keyup", () => {
+          clearTimeout(stateTimer);
+          const asked = stateSearch.value.toLowerCase();
+          clearTimeout(stateReply);
+          stateTimer = setTimeout(() => { stateReply = setTimeout(() => {
+            const country = document.getElementById("-1_PersonProfileFields.AddressCountry").value;
+            stateList.innerHTML = (states[country] || []).filter((name) => name.toLowerCase().includes(asked)).map((name, index) => '<li class="dropdown-result result-selectable" role="option" dropdown-index="' + index + '" title="' + name + '" aria-label="' + name + '">' + name + '</li>').join("");
+          }, 1000); }, 1000);
+        });
+        stateList.addEventListener("click", (event) => {
+          const item = event.target.closest("li");
+          if (!item) return;
+          stateAnchor.querySelector(".dropdown-text").textContent = item.textContent;
+          document.getElementById("-1_PersonProfileFields.AddressState").innerHTML = '<option value="' + item.textContent + '" selected>' + item.textContent + '</option>';
+          stateBox.classList.add("dropdown-invisible");
+          stateAnchor.setAttribute("aria-expanded", "false");
+        });
+        window.typedAfterPick = 0;
         const anchor = document.getElementById("-1_PersonProfileFields.AddressStreet1_icimsDropdown");
         const ctnr = document.getElementById("-1_PersonProfileFields.AddressStreet1_icimsDropdown_ctnr");
         const search = ctnr.querySelector("input.dropdown-search");
@@ -17285,6 +17324,7 @@ test("an iCIMS street search picks the listing of the saved street in its city",
         // The server answers after a moment, to the text as it was a key before.
         let before = "";
         search.addEventListener("keyup", () => {
+          if (window.picks.length) window.typedAfterPick++;
           const asked = before;
           before = search.value;
           setTimeout(() => draw(asked), 400);
@@ -17294,10 +17334,16 @@ test("an iCIMS street search picks the listing of the saved street in its city",
           if (!item) return;
           window.picks.push(item.textContent);
           if (item.getAttribute("dropdown-index") === "-2") return;
-          anchor.querySelector(".dropdown-text").textContent = item.textContent;
+          anchor.querySelector(".dropdown-text").textContent = item.textContent.split(",")[0];
+          const streetSelect = document.getElementById("-1_PersonProfileFields.AddressStreet1");
+          streetSelect.innerHTML = "";
+          streetSelect.add(new Option(item.textContent, item.textContent.split(",")[0], true, true));
           // As the site does on a street pick: the address block is rewritten,
           // Country and State emptied.
           for (const plain of document.querySelectorAll("a.plain-list")) plain.querySelector(".dropdown-text").innerHTML = '<span class="dropdown-placeholder">— Make a Selection —</span>';
+          document.getElementById("-1_PersonProfileFields.AddressCountry").innerHTML = "<option selected></option>";
+          document.getElementById("-1_PersonProfileFields.AddressState").innerHTML = "<option selected></option>";
+          stateAnchor.querySelector(".dropdown-text").innerHTML = '<span class="dropdown-placeholder">— Make a Selection —</span>';
           show(false);
         });
         // Country and State are plain lists, drawn open on a click.
@@ -17308,6 +17354,7 @@ test("an iCIMS street search picks the listing of the saved street in its city",
             const item = event.target.closest("li");
             if (!item) return;
             plain.querySelector(".dropdown-text").textContent = item.textContent;
+            document.getElementById("-1_PersonProfileFields.AddressCountry").innerHTML = '<option value="' + item.textContent + '" selected>' + item.textContent + '</option>';
             box.classList.add("dropdown-invisible");
             plain.setAttribute("aria-expanded", "false");
           });
@@ -17319,14 +17366,19 @@ test("an iCIMS street search picks the listing of the saved street in its city",
   const page = await context.newPage();
   await page.goto(`${site}/jobs/3/intern/street?from=profile`);
   await enqueue([page]);
-  await expect(page.locator('[id="-1_PersonProfileFields.AddressStreet1_icimsDropdown"] .dropdown-text')).toHaveText("100 East Mill Way, Blacksburg, VA 24060", { timeout: 90000 });
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressStreet1_icimsDropdown"] .dropdown-text')).toHaveText("100 East Mill Way", { timeout: 90000 });
   expect(await page.evaluate(() => (window as any).picks)).toEqual(["100 East Mill Way, Blacksburg, VA 24060"]);
   // The street was picked before Country and State, so the site's rewrite
   // of the address block left them as the fill set them.
   await expect(page.locator('[id="-1_PersonProfileFields.AddressCountry_icimsDropdown"] .dropdown-text')).toHaveText("United States", { timeout: 90000 });
-  await expect(page.locator('[id="-1_PersonProfileFields.AddressState_icimsDropdown"] .dropdown-text')).toHaveText("Virginia");
-  // The fill went on to the rest of the step and ended, the street not proposed again.
+  // The fill went on to the rest of the step and ended, the street not
+  // searched again once picked.
   await expect.poll(async () => (await state()).applications[0].status, { timeout: 90000 }).toMatch(/^(awaiting-user|ready)$/);
+  expect(await page.evaluate(() => (window as any).picks)).toEqual(["100 East Mill Way, Blacksburg, VA 24060"]);
+  expect(await page.evaluate(() => (window as any).typedAfterPick)).toBe(0);
+  // State loads its list only for the selected country, a second or more
+  // after the last key: the fill waited for it.
+  await expect(page.locator('[id="-1_PersonProfileFields.AddressState_icimsDropdown"] .dropdown-text')).toHaveText("Virginia");
 });
 
 // one employer's iCIMS screening page: native lists

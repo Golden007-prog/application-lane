@@ -1010,8 +1010,11 @@ async function searchDropdown(
       await sleep(150, options.signal);
       const now = signature();
       settled = now !== unfiltered && now === previous;
-      // Nothing found (an empty list, steady for over a second).
-      if (!now && now === previous && attempt >= 8) break;
+      // Nothing found (an empty list, steady for over three seconds): iCIMS'
+      // State list asks its server a second after the last key and takes
+      // another half second to answer, so a shorter wait gave up just
+      // before its states were drawn.
+      if (!now && now === previous && attempt >= 20) break;
       previous = now;
     }
     return settled ? results() : [];

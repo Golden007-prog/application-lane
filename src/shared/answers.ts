@@ -320,6 +320,13 @@ export function streetOption(value: string, choices: string[], optionText: strin
   return 48;
 }
 
+// A street already shown as its listing wrote it ("100 East Mill Way" for the
+// saved "100 E. Mill Way"): the same street, not another to search for.
+export function sameStreet(shown: string, saved: string): boolean {
+  const key = (text: string) => streetKey(text.split(",")[0]);
+  return /^\d/.test(shown.trim()) && key(shown) === key(saved);
+}
+
 // A street address with its directions and suffixes spelled out, to be
 // compared as written differently: "100 E. Mill Way" and "100 EAST
 // MILL WAY" are one street.

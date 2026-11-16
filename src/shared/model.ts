@@ -473,7 +473,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-16-revert-react-select-trusted-search";
+export const CONTENT_VERSION = "2026-11-16-icims-state-wait-same-street";
 export type Proposal = {
   fieldId: string;
   value: string;

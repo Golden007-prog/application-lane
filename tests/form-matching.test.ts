@@ -2662,3 +2662,13 @@ test("a graduation date's Day list beside Month and Year takes the 1st, and a Zi
   assert.equal(deterministicAnswer(field("Zipcode"), monthOnly), monthOnly.postalCode);
   assert.equal(proposals([field("If offered the position, how soon would you be able to start?", { kind: "combobox", required: false })], monthOnly)[0]?.value, "Immediately");
 });
+
+// An iCIMS street search writes its listing's own wording ("100 East Mill
+// Way") into the box; read as a different street, it was searched and picked
+// again every pass.
+test("a street the site holds in its listing's words is the saved street, not searched again", () => {
+  const saved = profileSchema.parse({ ...profile, address: "100 E. Mill Way", city: "Blacksburg", state: "Virginia" });
+  assert.deepEqual(proposals([field("Address", { kind: "combobox", value: "100 East Mill Way", siteValue: true })], saved), []);
+  // Another street is still corrected.
+  assert.equal(proposals([field("Address", { kind: "combobox", value: "200 East Mill Way", siteValue: true })], saved)[0]?.value, "100 E. Mill Way");
+});

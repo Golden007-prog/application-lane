@@ -4,6 +4,7 @@ import {
   choiceSynonyms,
   pickOption,
   readOption,
+  sameStreet,
   qualifiedBinarySentences,
 } from "./answers";
 import {
@@ -1796,6 +1797,11 @@ function ownProposals(fields: Field[], profile: Profile): Proposal[] {
     // (Not a list the site calls invalid: Oracle's cx-select shows text typed
     // into it and refuses it until an entry is picked.)
     if (field.siteValue && !(field.kind === "combobox" && field.invalid) && [answer.value, ...(answer.choices || [])].some((wording) => normalize(wording) === normalize(field.value)))
+      return [];
+    // A street a search listed in other words (iCIMS' "100 East Mill Way"
+    // for "100 E. Mill Way") is the saved street: searched again, it was
+    // picked again every pass.
+    if (field.siteValue && firstAddressLine.test(normalize(field.label)) && answer.value === profile.address && sameStreet(field.value, answer.value))
       return [];
     return [
       {
