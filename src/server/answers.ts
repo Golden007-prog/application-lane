@@ -130,6 +130,14 @@ const aboutTheDraft =
 const volunteeredLogistics =
   /\bcitizen(ship)?\b|\brelocat|\bsponsor|\bvisa\b|\bwork authori[sz]|\bavailable (for|from|to start|starting|in)\b|\bstart date\b/i;
 
+// "Which AI tools have you used?" asks for tools the applicant works with,
+// not for the models they built things on.
+export const TOOL_LIST_NOTE =
+  "Rule for this answer: it lists the applicant's own tools. Name first the AI assistants, coding tools and APIs the profile shows them using hands-on as tools (the ones they work with day to day), then models or libraries they built with. Every name must be in the profile.";
+export function asksForToolList(label: string): boolean {
+  return /\b(?:ai|artificial intelligence|llm|ml|machine learning|coding|developer|software)\b[^?.]{0,40}\btools?\b|\btools?\b[^?.]{0,60}\b(?:you(?:'ve| have)? used|you use|experience with|list)\b|\blist\b[^?.]{0,30}\btools?\b/iu.test(label);
+}
+
 // Where one sentence ends and the next begins: "U.S. citizen" is one.
 export const sentenceBreak = /(?<=[.!?])\s+(?=[\p{Lu}\p{N}"“])/u;
 
@@ -287,6 +295,7 @@ export async function writeAnswers(
               id,
               label: field.label,
               required: field.required,
+              ...(asksForToolList(field.label) ? { note: TOOL_LIST_NOTE } : {}),
               ...(field.maxLength ? { maxLength: field.maxLength } : {}),
               ...(field.maxWords ? { maxWords: field.maxWords } : {}),
               ...(options.rejected?.[field.id] ? { notUsed: options.rejected[field.id].slice(0, 400) } : {}),

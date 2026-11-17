@@ -31,6 +31,8 @@ import {
 import type { Config, DraftProviderConfig, Store } from "./store";
 import {
   applicationQuestion,
+  asksForToolList,
+  TOOL_LIST_NOTE,
   screenAnswer,
   shortLabel,
   skillContext,
@@ -60,6 +62,39 @@ export type DraftRequest = GenerationRequest & {
   // which the letter writer reads: what it takes from them is no invention.
   background?: string;
 };
+
+// Product and proper names a span carries: words with a capital past the
+// sentence's first word, a digit, an inner capital or a slash ("Claude API",
+// "ElevenLabs", "vLLM/Ollama"). A span whose every such name is in the
+// profile's own text is not one the checking model can fault for inventing a
+// tool.
+export function distinctiveTerms(span: string): string[] {
+  const words = span.split(/\s+/u).map((word) => word.replace(/^[^\p{L}\p{N}]+|[^\p{L}\p{N}]+$/gu, "")).filter(Boolean);
+  const terms: string[] = [];
+  words.forEach((word, index) => {
+    for (const part of word.split("/").filter(Boolean)) {
+      const capital = /^\p{Lu}/u.test(part) && index > 0 && !/^I(?:'\p{L}+)?$/u.test(part);
+      if (capital || /\d/u.test(part) || /\p{Ll}\p{Lu}/u.test(part) || word.includes("/")) terms.push(part);
+    }
+  });
+  return terms;
+}
+
+export function foundInProfile(span: string, profileText: string): boolean {
+  const terms = distinctiveTerms(span);
+  const plain = profileText.toLowerCase();
+  return terms.length > 0 && terms.every((term) => plain.includes(term.toLowerCase()));
+}
+
+// A remainder that opens leaning on what was cut ("I've also used ...").
+export function leansOnCutText(text: string): boolean {
+  const first = sentences(text)[0] || "";
+  return (
+    /^\s*(?:(?:in addition|additionally|besides that|besides|on top of that|other than that|moreover|furthermore|also)\b|(?:this|these|that|those|it|they)\b)/iu.test(first) ||
+    /^\s*(?:i|we)(?:'ve|'ll|'d|\s+have|\s+had)?\s+(?:also|additionally)\b/iu.test(first) ||
+    /\b(?:as well|too)[.!?]*\s*$/iu.test(first)
+  );
+}
 
 // "How many years of experience do you have in…" asks for a count. An
 // answer that names none (its "0 years" taken out by the check, only the
@@ -714,7 +749,7 @@ function selectionContext(profile: Profile, request: GenerationRequest) {
   );
   return {
     facts: profile.facts.map((f, i) => ({ id: factRefs[i], text: f.text })),
-    fields: fields.map((f, i) => ({ id: fieldRefs[i], label: f.label, ...(f.maxLength ? { maxLength: f.maxLength } : {}), ...(f.maxWords ? { maxWords: f.maxWords } : {}) })),
+    fields: fields.map((f, i) => ({ id: fieldRefs[i], label: f.label, ...(asksForToolList(f.label) ? { note: TOOL_LIST_NOTE } : {}), ...(f.maxLength ? { maxLength: f.maxLength } : {}), ...(f.maxWords ? { maxWords: f.maxWords } : {}) })),
     factsByRef: new Map(
       profile.facts.flatMap((f, i) => [
         [f.id, f.id],
@@ -1754,6 +1789,15 @@ export class GenerationQueue {
     // letter; an answer that loses more than half of itself that way, or
     // talks to the applicant, is left for them.
     const answerList = narrative?.answers || written?.answers || [];
+    // The literal profile text outranks the checking model: a claim whose
+    // every named tool or product is written there is not an invention.
+    for (const answer of answerList) {
+      const id = `answer:${answer.fieldId}`;
+      const verdict = verdicts.get(id);
+      if (!verdict?.unsupported.length) continue;
+      const stands = verdict.unsupported.filter((span) => !foundInProfile(span, profileText));
+      if (stands.length !== verdict.unsupported.length) verdicts.set(id, { ...verdict, unsupported: stands });
+    }
     const faults = new Map<string, string>();
     for (const answer of answerList) {
       const verdict = verdicts.get(`answer:${answer.fieldId}`);
@@ -1783,6 +1827,7 @@ export class GenerationQueue {
       const fault = faults.get(answer.fieldId);
       const verdict = verdicts.get(`answer:${answer.fieldId}`);
       const filler = verdict?.filler || [];
+      let leaning = "";
       let value = fault ? "" : filler.length ? withoutSpans(answer.value, filler).text : answer.value;
       if (fault && verdict && !verdict.addressesReader) {
         // Every faulted claim has to be in a sentence that came out: what
@@ -1791,7 +1836,10 @@ export class GenerationQueue {
         const trimmed = withoutSpans(answer.value, [...verdict.unsupported, ...filler]);
         const gone = withoutSpans(answer.value, verdict.unsupported).removed;
         const allOut = verdict.unsupported.every((span) => withoutSpans(answer.value, [span]).removed.length > 0);
-        if (trimmed.text && gone.length && allOut && trimmed.removed.length * 2 <= total) {
+        if (trimmed.text && gone.length && allOut && trimmed.removed.length * 2 <= total && leansOnCutText(trimmed.text)) {
+          // What is left would read as a continuation of what came out.
+          leaning = `taking out what the checking model did not find in your profile left a sentence that leans on the cut text ("${gone[0].slice(0, 60)}")`;
+        } else if (trimmed.text && gone.length && allOut && trimmed.removed.length * 2 <= total) {
           value = trimmed.text;
           warnings.push(
             `Took ${gone.length === 1 ? "a sentence" : `${gone.length} sentences`} out of your answer to "${label(answer.fieldId)}" that the checking model did not find in your profile: "${gone[0].slice(0, 110)}"${gone.length > 1 ? " and more" : ""}. Add it back in your own words if it is true.`.slice(0, 350),
@@ -1801,7 +1849,7 @@ export class GenerationQueue {
       const countless = Boolean(value) && namesNoDuration(asked(answer.fieldId) || "", value);
       if (value && !countless) answers.push({ ...answer, value });
       else if (countless) warnings.push(`Left "${label(answer.fieldId)}" for you: the answer gave no number of years, so it is yours to say.`.slice(0, 350));
-      else warnings.push(`Left "${label(answer.fieldId)}" for you: ${fault || "the draft said nothing on its own"}.`.slice(0, 350));
+      else warnings.push(`Left "${label(answer.fieldId)}" for you: ${leaning || fault || "the draft said nothing on its own"}.`.slice(0, 350));
     }
     let checkedNarrative = narrative && { ...narrative, answers };
     if (narrative && checkedNarrative) {

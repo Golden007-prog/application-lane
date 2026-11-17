@@ -1071,6 +1071,36 @@ test("the queue applies the verifier's reading, keeps withheld questions empty, 
   assert.equal(trimmed.answers.find((a) => a.fieldId === "kept")?.value, "I built a TypeScript web application used by 2,000 students. I wrote its tests. It ran on a small server.");
   assert.match(trimmed.warnings!.join(" "), /Took a sentence out of your answer to "kept" that the checking model did not find in your profile: "The tradeoff was speed against safety\."/);
   assert.doesNotMatch(trimmed.warnings!.join(" "), /Left "kept"/);
+  // A report: "Which AI tools have you used?" lost its first sentence, which
+  // listed tools written word for word in the profile, and was filled with an
+  // orphaned "also" sentence. The profile's own text overrules the checking
+  // model when every named tool of a faulted sentence is in it.
+  const listed = "I built a TypeScript web application used by 2,000 students. I also wrote its tests.";
+  const overruled = await run(
+    async () => new Map([["answer:kept", verdict({ unsupported: ["I built a TypeScript web application used by 2,000 students"] })], ["answer:written", verdict()]]),
+    listed,
+  );
+  assert.equal(overruled.answers.find((a) => a.fieldId === "kept")?.value, listed);
+  assert.doesNotMatch((overruled.warnings || []).join(" "), /Took a sentence out of your answer to "kept"|Left "kept"/);
+  // One name the profile lacks keeps today's reading, and so does a sentence naming nothing.
+  const invented = await run(
+    async () => new Map([["answer:kept", verdict({ unsupported: ["I built a TypeScript web application used by 2,000 students and Zorblax"] })], ["answer:written", verdict()]]),
+    "I built a TypeScript web application used by 2,000 students and Zorblax. I wrote its tests.",
+  );
+  assert.equal(invented.answers.find((a) => a.fieldId === "kept")?.value, "I wrote its tests.");
+  // What stays never leans on what was cut: "also ..." alone is not an answer.
+  const orphan = await run(
+    async () => new Map([["answer:kept", verdict({ unsupported: ["The tradeoff was speed against safety"] })], ["answer:written", verdict()]]),
+    "The tradeoff was speed against safety. I also wrote its tests.",
+  );
+  assert.deepEqual(orphan.answers.map((a) => a.fieldId), ["written"]);
+  assert.match(orphan.warnings!.join(" "), /Left "kept" for you: .*leans on the cut text/);
+  assert.doesNotMatch(orphan.warnings!.join(" "), /Took a sentence out of your answer to "kept"/);
+  const pointing = await run(
+    async () => new Map([["answer:kept", verdict({ unsupported: ["The tradeoff was speed against safety"] })], ["answer:written", verdict()]]),
+    "The tradeoff was speed against safety. This is why I wrote its tests. I shipped it.",
+  );
+  assert.deepEqual(pointing.answers.map((a) => a.fieldId), ["written"]);
   // More than half of an answer faulted is no answer: it is left, whole.
   const gutted = await run(
     async () => new Map([["answer:kept", verdict({ unsupported: ["I wrote its tests", "It ran on a small server", "The tradeoff was speed against safety"] })], ["answer:written", verdict()]]),
@@ -1097,10 +1127,11 @@ test("the queue applies the verifier's reading, keeps withheld questions empty, 
   const sweeping = await run(async (drafts) =>
     new Map(drafts.map((draft) => [draft.id, verdict({ unsupported: draft.text.split(". ").slice(0, 3) })])),
   );
-  assert.deepEqual(sweeping.answers.map((a) => a.fieldId), []);
+  // "written" restates the profile word for word, so the profile overrules the fault on it; "kept" has nothing to stand on.
+  assert.deepEqual(sweeping.answers.map((a) => a.fieldId), ["written"]);
   assert.match(sweeping.coverLetter[1].text, /^I built .* I use it daily\. I did this as an intern\./);
   assert.doesNotMatch(sweeping.warnings!.join(" "), /questioned every answer/);
-  assert.match(sweeping.warnings!.join(" "), /Left "written" for you/);
+  assert.match(sweeping.warnings!.join(" "), /Left "kept" for you/);
   assert.match(sweeping.warnings!.join(" "), /questioned 3 of the cover letter's 6 sentences/);
   // Fast checking asks no second model.
   config.checking = "fast";
@@ -1998,4 +2029,19 @@ test("a street search's listing is never another city, ZIP, number or street", (
     "— Enter Manually —",
   ])
     assert.equal(rankOption(streetAsk, other), undefined, other);
+});
+
+test("a question listing the tools the applicant has used asks for hands-on tools before models they built with", async (t) => {
+  const { config, sent } = await endpoint(t, []);
+  const context = await skillContext(await checkout());
+  await writeAnswers(
+    config,
+    request([field("Which AI tools have you used in your work, education, or personal projects? Please list the tools you have experience with."), field("Describe your experience")]),
+    profile,
+    context,
+    new AbortController().signal,
+  );
+  const [tools, other] = JSON.parse(sent().messages[1].content).questions;
+  assert.match(tools.note, /AI assistants, coding tools and APIs/);
+  assert.equal(other.note, undefined);
 });
