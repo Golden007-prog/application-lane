@@ -1,5 +1,5 @@
 import { existsSync } from "node:fs";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { resolveDataDirectory } from "./paths";
 import { randomBytes } from "node:crypto";
@@ -141,6 +141,9 @@ export async function readJSON<T>(path: string, fallback: T): Promise<T> {
   }
 }
 export type Database = { profile: Profile; jobs: GenerationJob[] };
+// The format of state.json this build writes and reads. A file from before
+// it was numbered reads as 0. 1: { schemaVersion, profile, jobs }.
+export const STATE_VERSION = 1;
 export class Store {
   data: Database = { profile: structuredClone(emptyProfile), jobs: [] };
   private pending = Promise.resolve();
@@ -158,13 +161,35 @@ export class Store {
       recursive: true,
       mode: 0o700,
     });
-    this.data = await readJSON(join(this.directory, "state.json"), this.data);
+    const path = join(this.directory, "state.json");
+    // The applicant's profile and history: never overwritten unread. A file
+    // that cannot be read, or that a newer build wrote, stops the backend
+    // with what to do, and is left as it is.
+    let raw: unknown;
+    try {
+      raw = JSON.parse(await readFile(path, "utf8"));
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT")
+        throw new Error(`${path} could not be read (${(error as Error).message}). It was left as it is: restore it from a backup beside it, or move it aside to start with an empty profile.`);
+    }
+    const found = raw && typeof raw === "object" ? raw as Partial<Database> & { schemaVersion?: unknown } : undefined;
+    const version = typeof found?.schemaVersion === "number" ? found.schemaVersion : 0;
+    if (version > STATE_VERSION)
+      throw new Error(`${path} was saved by a newer version of Application Lane (format ${version}; this one reads up to ${STATE_VERSION}). Update Application Lane; the file was left as it is.`);
+    if (found) {
+      const { schemaVersion: _version, ...data } = found;
+      this.data = { ...this.data, ...data } as Database;
+    }
+    // Whether what is saved changes on load: an older format, or a profile
+    // that only loads in part. The file as it was is kept beside it first.
+    let changed = Boolean(found) && version !== STATE_VERSION;
     // A legacy or hand-edited profile must not stop the backend from starting.
     // Keep every field that still validates and drop only the ones that do not;
     // a recovered profile always needs reconfirmation before it is used.
     const stored = profileSchema.safeParse(this.data.profile);
     if (stored.success) this.data.profile = stored.data;
     else {
+      changed = true;
       const candidate: Record<string, unknown> = {
         ...structuredClone(emptyProfile),
         ...(this.data.profile as object),
@@ -187,6 +212,12 @@ export class Store {
         }
       }
     }
+    if (changed) {
+      const backup = `${path}.backup-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+      await copyFile(path, backup);
+      await chmod(backup, 0o600);
+    }
+    if (!Array.isArray(this.data.jobs)) this.data.jobs = [];
     for (const job of this.data.jobs)
       if (job.status === "queued" || job.status === "running") {
         job.status = "failed";
@@ -195,7 +226,7 @@ export class Store {
     await this.save();
   }
   save() {
-    const snapshot = structuredClone(this.data);
+    const snapshot = { schemaVersion: STATE_VERSION, ...structuredClone(this.data) };
     this.pending = this.pending
       .catch(() => {})
       .then(() => atomicJSON(join(this.directory, "state.json"), snapshot));

@@ -496,9 +496,10 @@ test("deleting local data leaves none of the applicant's files behind, and never
       await writeFile(join(directory, "tailoring", "resumes", "main.tex"), "\\documentclass{article}");
       await writeFile(join(directory, "repairs.json"), "[]");
       await writeFile(join(directory, "leak-terms.txt"), "Rivera\n");
+      await writeFile(join(directory, "state.json.backup-2026-11-17T08-00-00-000Z"), '{"profile":{"firstName":"Alex"}}');
       assert.equal((await fetch(`${url}/v1/data`, { method: "DELETE", headers })).status, 200);
       assert.deepEqual(await readdir(join(directory, "issues")), []);
-      for (const gone of ["tailoring", "repairs.json", "leak-terms.txt"])
+      for (const gone of ["tailoring", "repairs.json", "leak-terms.txt", "state.json.backup-2026-11-17T08-00-00-000Z"])
         await assert.rejects(readFile(join(directory, gone)), /ENOENT/, gone);
       assert.equal(await readFile(join(ownFolder, "profile.md"), "utf8"), "# Alex Rivera");
       assert.equal(cfg.tailorDir, imported ? undefined : ownFolder);

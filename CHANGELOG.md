@@ -4,6 +4,8 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 ## Unreleased
 
+- `state.json`, which holds your profile, now records its format. Before it is changed on load (an older format, or a profile that only loads in part) the file as it was is kept as `state.json.backup-<time>`; a file a newer version wrote, or one that cannot be read, stops the backend with a message naming it instead of being overwritten. Delete local application data removes the backups too.
+
 - **Settings → Drafting → Checking** now says when nothing checks your drafts: with one Drafting provider and no checker, no second model can check them. A checker or provider added in Settings checks the next drafts without restarting the backend, as Settings promises.
 
 - Security and privacy: Find jobs' site check and the posting reader open only public pages, by name and by every address the name resolves to, and check every redirect the same way, so a listing cannot have the backend open a page on your computer or your network. Written answers no longer send what you chose in sensitive fields (gender, disability, authorization and similar) to the drafting provider. PRIVACY.md now lists exactly what each kind of draft sends.

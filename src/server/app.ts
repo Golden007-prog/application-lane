@@ -1001,6 +1001,10 @@ export async function createApp(
         // applicant's own list of personal details.
         for (const file of ["submissions.json", "queue.json", "inbox.json", "repairs.json", "leak-terms.txt"])
           await unlink(join(directory, file)).catch(() => {});
+        // Copies of state.json kept before a change of format (store.ts):
+        // they hold the profile too.
+        for (const name of await readdir(directory).catch(() => [] as string[]))
+          if (/^state\.json\.backup-[\w-]+$/.test(name)) await unlink(join(directory, name)).catch(() => {});
         // The tailoring folder imported into the data folder (profile.md,
         // preferences, resume sources) is the profile too. One kept anywhere
         // else is the applicant's own folder, and is never touched.

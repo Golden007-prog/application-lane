@@ -22,7 +22,7 @@ Inside the data folder:
 | Path | What it holds |
 | --- | --- |
 | `config.json` | Settings, the pairing token and any API key. Owner-only permissions (on Linux and macOS; Windows does not honour these modes, so treat it as a secret). |
-| `state.json` | Your profile, saved answers and drafting history |
+| `state.json` | Your profile, saved answers and drafting history. Numbered by format: before a newer build changes it (or recovers a profile that only loads in part), the file as it was is kept beside it as `state.json.backup-<time>`. A file a newer build wrote, or one that is not readable, stops the backend with a message naming it, and is left as it is. |
 | `artifacts/` | Drafted documents the extension previews and attaches |
 | `issues/` | Issue reports you chose to save, and any network capture saved with them |
 | `recordings/` | Page-activity recordings you chose to save |
