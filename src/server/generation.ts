@@ -1509,6 +1509,19 @@ export function provider(
   };
 }
 
+// The resume brief and the written answers a queue uses unless given its
+// own; a test that replaces one for a single case falls back to these.
+export const defaultTailor = (config: Config): Tailor => (request, profile, signal, options) =>
+  planTailoring({ ...config, tailorDir: config.tailorDir || "" }, request, profile, signal, options);
+export const defaultAnswer = (config: Config): AnswerWriter => async (request, profile, signal, rejected) =>
+  writeAnswers(
+    config,
+    request,
+    profile,
+    config.tailorDir ? await skillContext(config.tailorDir) : { profile: "", preferences: "", guidance: "", warnings: [] },
+    signal,
+    rejected ? { rejected } : {},
+  );
 export class GenerationQueue {
   private pending: {
     job: GenerationJob;
@@ -1523,24 +1536,9 @@ export class GenerationQueue {
     private store: Store,
     private config: Config,
     private generate: Generate = provider(config),
-    private tailor: Tailor = (request, profile, signal, options) =>
-      planTailoring(
-        { ...config, tailorDir: config.tailorDir || "" },
-        request,
-        profile,
-        signal,
-        options,
-      ),
+    private tailor: Tailor = defaultTailor(config),
     // Application questions answered the way /job-apply answers them.
-    private answer: AnswerWriter = async (request, profile, signal, rejected) =>
-      writeAnswers(
-        config,
-        request,
-        profile,
-        config.tailorDir ? await skillContext(config.tailorDir) : { profile: "", preferences: "", guidance: "", warnings: [] },
-        signal,
-        rejected ? { rejected } : {},
-      ),
+    private answer: AnswerWriter = defaultAnswer(config),
     // The job posting behind the application's URLs (posting.ts).
     private lookupPosting: (urls: string[], signal: AbortSignal) => Promise<Posting | undefined> = (
       urls,

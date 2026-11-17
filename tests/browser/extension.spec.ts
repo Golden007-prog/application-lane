@@ -16,7 +16,7 @@ import { build } from "esbuild";
 import { PDFDocument } from "pdf-lib";
 import { Document, Packer, Paragraph } from "docx";
 import { createApp } from "../../src/server/app";
-import type { GenerationQueue } from "../../src/server/generation";
+import { defaultAnswer, defaultTailor, type GenerationQueue } from "../../src/server/generation";
 import { configSchema } from "../../src/server/store";
 import { profileSchema, type QueueState } from "../../src/shared/model";
 import {
@@ -247,8 +247,10 @@ test.beforeEach(async () => {
     },
     {
       extensionDir: extensionPath,
-      tailor: (...args) => (runtimeTailor ? runtimeTailor(...args) : Promise.reject(new Error("no tailoring in this test"))),
-      answer: (...args) => (runtimeAnswer ? runtimeAnswer(...args) : Promise.reject(new Error("no answers in this test"))),
+      // Replaced only by a test that sets one; the rest use the real ones
+      // (the question-drafting tests answer through their own provider).
+      tailor: (...args) => (runtimeTailor ?? defaultTailor(appConfig))(...args),
+      answer: (...args) => (runtimeAnswer ?? defaultAnswer(appConfig))(...args),
     },
   );
   app.store.data.profile = structuredClone(profile);
