@@ -44,7 +44,7 @@ import {
   writeFieldFallback,
   type FieldFallbackWriter,
 } from "./field-fallback";
-import { checkers, sentences, verifier, withoutSpans, type Draft, type Verifier } from "./verify";
+import { checkers, namedInOneEntry, sentences, verifier, withoutSpans, type Draft, type Verifier } from "./verify";
 import { applicationGraduation, applicationProfile, withGraduation } from "./profile-sync";
 import { assessJobFit, unknownFit, type FitAssessor } from "./job-fit";
 import { fitAnswerLength } from "../shared/questions";
@@ -80,10 +80,10 @@ export function distinctiveTerms(span: string): string[] {
   return terms;
 }
 
+// The same terms, all named in one entry of the profile that may vouch for
+// them (namedInOneEntry, verify.ts).
 export function foundInProfile(span: string, profileText: string): boolean {
-  const terms = distinctiveTerms(span);
-  const plain = profileText.toLowerCase();
-  return terms.length > 0 && terms.every((term) => plain.includes(term.toLowerCase()));
+  return namedInOneEntry(span, distinctiveTerms(span), profileText);
 }
 
 // A remainder that opens leaning on what was cut ("I've also used ...").
@@ -1762,7 +1762,10 @@ export class GenerationQueue {
     let profileText = profile.facts.map((fact) => `- ${fact.text}`).join("\n");
     if (this.config.tailorDir) {
       const context = await skillContext(this.config.tailorDir).catch(() => undefined);
-      if (context?.profile) profileText = `${context.profile}\n\n${context.preferences}\n\n${profileText}`;
+      // The facts under their own heading: after profile.md's last section
+      // they read as part of it, and a profile ending in "## Known gaps"
+      // made every fact a gap (evidenceEntries, verify.ts).
+      if (context?.profile) profileText = `${context.profile}\n\n${context.preferences}\n\n## Confirmed facts\n${profileText}`;
     }
     let verdicts;
     try {
@@ -1787,8 +1790,10 @@ export class GenerationQueue {
     // letter; an answer that loses more than half of itself that way, or
     // talks to the applicant, is left for them.
     const answerList = narrative?.answers || written?.answers || [];
-    // The literal profile text outranks the checking model: a claim whose
-    // every named tool or product is written there is not an invention.
+    // The literal profile text outranks the checking model, within limits: a
+    // claim whose every named tool or product one profile entry names, with
+    // nothing added that only the entry's words could vouch for, is not an
+    // invention (namedInOneEntry, verify.ts).
     for (const answer of answerList) {
       const id = `answer:${answer.fieldId}`;
       const verdict = verdicts.get(id);

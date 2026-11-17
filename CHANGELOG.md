@@ -4,6 +4,8 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 ## Unreleased
 
+- A drafted answer the checking model faulted is kept on the profile's word only when one entry of your profile names everything it names, as whole words, outside your Known gaps, and it adds no duration, frequency or seniority. Before, a name written anywhere in your notes was enough, so "No Redis" under Known gaps could vouch for "three years of Redis". Your confirmed facts are also no longer read as part of the last section of your profile.md.
+
 - Eligibility answers are more careful. A list that words its answers as sentences ("Yes, I am a U.S. citizen") gets a plain Yes or No only when the sentence adds nothing the question does not ask. A work-authorization or sponsorship answer is given only for the job's country, and "Do you authorize a background check?" is no longer read as a work-authorization question. With AI filling automatic, questions about identity, work eligibility and pay are drafted for your approval instead of filled.
 
 - Every click a fill makes now passes one check that refuses Submit, Next, Continue and signing controls, including real clicks and Enter presses sent through the debugger.

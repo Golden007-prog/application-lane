@@ -369,6 +369,22 @@ export function supportedBy(claim: string, quote: string, sentence: string, all:
 export const talksAboutSources = (text: string) =>
   /\b((job|role) (text|posting|description|listing)|(the|this|their|your) (posting|listing)|(the|my|your|applicant's) profile|(information|details|context) (provided|available|given|I have|I was given)|(do not|don't|cannot|can't|could not|couldn't) (have|see|find|know|access) (the|their|its|any|enough|a|that)|(is|are|was|were) not (stated|specified|provided|listed|mentioned|described|given)|(will|would|can|could) (not|rather not) (claim|state|say|speak to)|rather not claim)\b/iu.test(text);
 
+// Whether the profile's own text vouches for a span the checking model
+// faulted (generation.ts): one entry names every one of its terms as a
+// whole word ("Go" is not "Google", "5" is not "2025"), that entry is not
+// the applicant's Known gaps ("No Redis" vouches for no Redis), work done
+// does not rest on a skills list, and the span adds nothing only an entry's
+// own words could vouch for: a duration, a frequency, an amount, or the
+// applicant's standing ("three years", "led the team"). Terms spread over
+// two entries are a recombination, which only the checking model can judge.
+export function namedInOneEntry(span: string, terms: string[], profile: string): boolean {
+  if (!terms.length || new RegExp(standing.source, "iu").test(span)) return false;
+  const work = workVerb.test(span) || pastTense.test(span) || irregularPast.test(span);
+  const pool = evidenceEntries(profile).filter((entry) => !gapSection.test(entry) && !(work && listSection.test(entry)));
+  const named = terms.map((term) => new RegExp(`(?<![\\p{L}\\p{N}])${term.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&")}(?![\\p{L}\\p{N}])`, "iu"));
+  return pool.some((entry) => named.every((pattern) => pattern.test(entry)));
+}
+
 // For tests and callers that have no sentence: the claim as its own.
 export function heldByOneEntry(claim: string, entries: string[]): boolean {
   return supportedBy(claim, "", claim, entries);
