@@ -156,7 +156,32 @@ def set_graduation(tex: str, month: str) -> tuple[str, str | None]:
     return tex[: start.end()] + section + tex[stop:], f"graduation shown as {shown} for this role"
 
 
-_SPECIAL = re.compile(r"(?<!\\)([#$%&_])")
+# Every character TeX reads as markup, and the escapes a source already
+# writes for the printable ones ("C\\#", "R\\&D"), which stay as written.
+_ESCAPES = {
+    "\\": r"\textbackslash{}",
+    "#": r"\#",
+    "$": r"\$",
+    "%": r"\%",
+    "&": r"\&",
+    "_": r"\_",
+    "{": r"\{",
+    "}": r"\}",
+    "~": r"\textasciitilde{}",
+    "^": r"\textasciicircum{}",
+}
+_SPECIAL = re.compile(r"\\[#$%&_{}]|[\\#$%&_{}~^]")
+
+
+def _escape(text: str) -> str:
+    """Model text as typeset text, never as commands.
+
+    The brief's words come from a model that read the posting, and a posting
+    can be written to steer it: "\\input{/home/…}" in the summary would have
+    typeset a local file into the résumé sent to the employer. Escaped in one
+    pass (cover_letter.escape_latex says why).
+    """
+    return _SPECIAL.sub(lambda match: match.group(0) if len(match.group(0)) == 2 else _ESCAPES[match.group(0)], text)
 
 
 def _latex_safe(brief: dict) -> dict:
@@ -164,9 +189,10 @@ def _latex_safe(brief: dict) -> dict:
 
     Escaped only after the engine's checks, which compare names the way the
     source spells them, so those checks are unchanged. Already-escaped
-    characters are left alone.
+    printable characters are left alone; every other backslash, brace, tilde
+    and caret is printed, not obeyed.
     """
-    escape = lambda text: _SPECIAL.sub(r"\\\1", text) if isinstance(text, str) else text  # noqa: E731
+    escape = lambda text: _escape(text) if isinstance(text, str) else text  # noqa: E731
     safe = dict(brief)
     if "summary_line" in safe:
         safe["summary_line"] = escape(safe["summary_line"])

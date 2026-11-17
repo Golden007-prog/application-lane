@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
@@ -467,6 +467,46 @@ test("issue reports persist locally, export intact, delete individually, and cle
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
+});
+
+test("deleting local data leaves none of the applicant's files behind, and never their own folders", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lane-delete-"));
+  // A tailoring folder the applicant keeps elsewhere is theirs.
+  const ownFolder = await mkdtemp(join(tmpdir(), "lane-own-tailoring-"));
+  await writeFile(join(ownFolder, "profile.md"), "# Alex Rivera");
+  for (const [tailorDir, imported] of [[ownFolder, false], [join(directory, "tailoring"), true]] as const) {
+    const cfg = { ...config(), tailorDir };
+    const { server } = await createApp(cfg, directory);
+    server.listen(0, "127.0.0.1");
+    await once(server, "listening");
+    const url = `http://127.0.0.1:${(server.address() as any).port}`;
+    const headers = { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" };
+    try {
+      const id = randomUUID();
+      const png = Buffer.from("89504e470d0a1a0a0000000d49484452", "hex");
+      assert.equal((await fetch(`${url}/v1/issues`, { method: "POST", headers, body: JSON.stringify({
+        id, createdAt: Date.now(), category: "wrong-value", note: "Wrong city.",
+        tab: { tabId: 4, url: "https://jobs.example.test/application", title: "Application" },
+        extension: { version: "0.1.0", contentVersion: "test" },
+        frames: [{ url: "https://jobs.example.test/application", html: "<input>" }],
+        images: [{ mime: "image/png", data: png.toString("base64") }],
+      }) })).status, 201);
+      await mkdir(join(directory, "tailoring", "resumes"), { recursive: true });
+      await writeFile(join(directory, "tailoring", "profile.md"), "# Alex Rivera");
+      await writeFile(join(directory, "tailoring", "resumes", "main.tex"), "\\documentclass{article}");
+      await writeFile(join(directory, "repairs.json"), "[]");
+      await writeFile(join(directory, "leak-terms.txt"), "Rivera\n");
+      assert.equal((await fetch(`${url}/v1/data`, { method: "DELETE", headers })).status, 200);
+      assert.deepEqual(await readdir(join(directory, "issues")), []);
+      for (const gone of ["tailoring", "repairs.json", "leak-terms.txt"])
+        await assert.rejects(readFile(join(directory, gone)), /ENOENT/, gone);
+      assert.equal(await readFile(join(ownFolder, "profile.md"), "utf8"), "# Alex Rivera");
+      assert.equal(cfg.tailorDir, imported ? undefined : ownFolder);
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  }
+  await rm(ownFolder, { recursive: true, force: true });
 });
 
 test("OpenAI-compatible transport uses compact JSON contracts, retries throttling, and recovers malformed output", async () => {

@@ -19,6 +19,7 @@ which is checked mechanically rather than trusted: `findings()` rejects any skil
 that does not appear verbatim in the source.
 """
 
+import os
 import re
 import shutil
 import subprocess
@@ -396,12 +397,15 @@ def compile_pdf(tex: str, workdir: Path, stem: str) -> Path:
 
         for _ in range(2):
             # Twice: hyperref and titlesec settle their references on the second pass.
+            # No shell escape, and no file read or written outside the build
+            # directory and TeX's own tree: the source carries a model's words.
             result = subprocess.run(  # noqa: S603
-                [engine, "-interaction=nonstopmode", "-halt-on-error", source.name],
+                [engine, "-interaction=nonstopmode", "-halt-on-error", "-no-shell-escape", source.name],
                 cwd=build_dir,
                 capture_output=True,
                 text=True,
                 timeout=120,
+                env={**os.environ, "openin_any": "p", "openout_any": "p"},
             )
             if result.returncode != 0:
                 detail = _first_error(result.stdout) or "see the LaTeX log"

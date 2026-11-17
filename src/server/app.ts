@@ -991,12 +991,22 @@ export async function createApp(
         for (const name of await readdir(join(directory, "artifacts")))
           if (/^[a-f0-9-]{36}\.(pdf|docx)$/.test(name))
             await unlink(join(directory, "artifacts", name));
+        // Reports, recordings and captures, with their network logs and the
+        // screenshots saved beside a report (<id>.image-1.png).
         for (const folder of ["issues", "recordings", "captures"])
           for (const name of await readdir(join(directory, folder)).catch(() => [] as string[]))
-            if (/^[a-f0-9-]{36}(\.har)?\.json$/.test(name))
+            if (/^[a-f0-9-]{36}(\.har)?\.json$|^[a-f0-9-]{36}\.image-\d+\.(png|jpg|webp|gif)$/.test(name))
               await unlink(join(directory, folder, name)).catch(() => {});
-        for (const file of ["submissions.json", "queue.json", "inbox.json"])
+        // The fixer's repairs name applications; leak-terms.txt is the
+        // applicant's own list of personal details.
+        for (const file of ["submissions.json", "queue.json", "inbox.json", "repairs.json", "leak-terms.txt"])
           await unlink(join(directory, file)).catch(() => {});
+        // The tailoring folder imported into the data folder (profile.md,
+        // preferences, resume sources) is the profile too. One kept anywhere
+        // else is the applicant's own folder, and is never touched.
+        const imported = join(directory, "tailoring");
+        await rm(imported, { recursive: true, force: true });
+        if (config.tailorDir && resolve(config.tailorDir) === resolve(imported)) delete config.tailorDir;
         // Searches (their settings, results and cached listings) and the
         // fixer's results and tasks; its own settings stay.
         await rm(join(directory, "search"), { recursive: true, force: true });

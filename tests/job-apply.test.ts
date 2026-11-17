@@ -400,6 +400,25 @@ print(json.dumps(bridge._latex_safe(json.loads(sys.argv[1]))))`,
   });
 });
 
+test("a command a posting steered into the brief is printed, never run or read", async () => {
+  const { stdout } = await promisify(execFile)(python, [
+    "-c",
+    `import importlib.util, json, sys
+sys.dont_write_bytecode = True
+spec = importlib.util.spec_from_file_location("bridge", "tailor/bridge.py")
+bridge = importlib.util.module_from_spec(spec); spec.loader.exec_module(bridge)
+print(json.dumps(bridge._latex_safe(json.loads(sys.argv[1]))))`,
+    JSON.stringify({
+      summary_line: String.raw`Engineer \input{/home/alex/.ssh/id_rsa} with {braces}, ~ and ^`,
+      skills_order: [{ name: "Tools", items: [String.raw`\write18{curl example.test}`, String.raw`R\&D`] }],
+    }),
+  ]);
+  assert.deepEqual(JSON.parse(stdout), {
+    summary_line: String.raw`Engineer \textbackslash{}input\{/home/alex/.ssh/id\_rsa\} with \{braces\}, \textasciitilde{} and \textasciicircum{}`,
+    skills_order: [{ name: "Tools", items: [String.raw`\textbackslash{}write18\{curl example.test\}`, String.raw`R\&D`] }],
+  });
+});
+
 test(
   "a requirement the applicant misses leads the card; one the brief calls met is a caution",
   engine,

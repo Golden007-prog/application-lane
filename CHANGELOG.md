@@ -4,6 +4,8 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 ## Unreleased
 
+- Security and privacy: a tailored résumé's summary and skills are written as text only, so a posting cannot slip a LaTeX command (such as reading a local file) into the résumé, and pdflatex runs with shell escape off and file access limited to its build folder. Network capture for reports no longer keeps passwords, one-time codes, tokens or session keys from requests, addresses or JSON replies. **Delete local application data** now also removes report screenshots, the fixer's list of repairs, the imported tailoring folder and your leak-check terms.
+
 - Maintainers: the isolated session that works on shared reports no longer holds the Claude token. The repository is fetched in one container; the agent works in a second one with no network, reaching Claude only through a proxy outside it that adds the token and passes on nothing but the Messages API. Run `sudo bash scripts/report-sandbox/setup.sh` again (Enter keeps the token), then the check.
 
 - A drafted answer the checking model faulted is kept on the profile's word only when one entry of your profile names everything it names, as whole words, outside your Known gaps, and it adds no duration, frequency or seniority. Before, a name written anywhere in your notes was enough, so "No Redis" under Known gaps could vouch for "three years of Redis". Your confirmed facts are also no longer read as part of the last section of your profile.md.

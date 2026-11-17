@@ -12,6 +12,7 @@
 // the report is saved by the local backend.
 
 import { claimDebugger, holdsDebugger, releaseDebugger } from "./debugger-session";
+import { secretName } from "./workspace";
 
 type Target = chrome.debugger.Debuggee & { sessionId?: string };
 type Header = { name: string; value: string };
@@ -43,6 +44,74 @@ const TOTAL_LIMIT = 40_000_000;
 const BODY_LIMIT = 4_000_000;
 const ENTRY_LIMIT = 4000;
 const secret = /^(cookie|set-cookie|authorization|proxy-authorization|.*(?:csrf|xsrf|api-key|auth-token).*)$/i;
+
+// A credential in a field or query parameter: a password, a one-time code, a
+// session, a token, a key (secretName), and the short names sites use for
+// them. Kept narrow: a list request's own parameters (countryCode, key=
+// a field's id) are what a replay matches on.
+const secretField = (name: string) =>
+  secretName.test(name) ||
+  /^(code|sig|signature|jwt|ticket|pin|ssn|access_?token|refresh_?token|id_?token|client_?secret)$/i.test(name) ||
+  /(mfa|2fa|totp|auth|security|confirmation|sms|email)_?code$/i.test(name);
+const REDACTED = "[redacted]";
+
+// A request's URL with its credentials' values replaced.
+export function redactCapturedURL(url: string): string {
+  if (!url.includes("?")) return url;
+  try {
+    const parsed = new URL(url);
+    let changed = false;
+    for (const name of new Set(parsed.searchParams.keys()))
+      if (secretField(name)) {
+        parsed.searchParams.set(name, REDACTED);
+        changed = true;
+      }
+    return changed ? parsed.toString() : url;
+  } catch {
+    return url;
+  }
+}
+
+// Every value under a credential's name in parsed JSON, replaced.
+function redactJSON(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(redactJSON);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>).map(([name, inner]) =>
+      [name, secretField(name) && (typeof inner === "string" || typeof inner === "number") ? REDACTED : redactJSON(inner)]),
+  );
+}
+
+// A request or response body with its credentials' values replaced: a
+// sign-in form's password, a one-time code, a login reply's token. Saved
+// with a report, the capture otherwise kept them as typed (PRIVACY.md).
+export function redactBody(text: string, mimeType = ""): string {
+  if (!text) return text;
+  const trimmed = text.trimStart();
+  if (/json/i.test(mimeType) || trimmed.startsWith("{") || trimmed.startsWith("[")) {
+    try {
+      return JSON.stringify(redactJSON(JSON.parse(text)));
+    } catch {
+      /* not JSON after all: read as below */
+    }
+  }
+  if (/multipart\/form-data/i.test(mimeType) || /^--[^\r\n]+\r?\n[Cc]ontent-[Dd]isposition/.test(trimmed))
+    return text.replace(
+      /(Content-Disposition:[^\r\n]*\bname="([^"]*)"[^\r\n]*\r?\n(?:[^\r\n]+\r?\n)*\r?\n)([\s\S]*?)(?=\r?\n--)/gi,
+      (whole, head: string, name: string) => (secretField(name) ? `${head}${REDACTED}` : whole),
+    );
+  if (/x-www-form-urlencoded/i.test(mimeType) || /^[\w.%[\]-]+=[^&\s]*(&[\w.%[\]-]+=[^&\s]*)*$/.test(text.trim())) {
+    const form = new URLSearchParams(text);
+    let changed = false;
+    for (const name of new Set(form.keys()))
+      if (secretField(name)) {
+        form.set(name, REDACTED);
+        changed = true;
+      }
+    return changed ? form.toString() : text;
+  }
+  return text;
+}
 
 const headers = (raw: Record<string, unknown> = {}): Header[] =>
   Object.entries(raw)
@@ -217,9 +286,11 @@ chrome.debugger?.onEvent.addListener((rawSource, method, rawParams) => {
       type: params.type,
       request: {
         method: request.method || "GET",
-        url: request.url || "",
+        url: redactCapturedURL(request.url || ""),
         headers: headers(request.headers),
-        ...(typeof request.postData === "string" ? { postData: request.postData.slice(0, BODY_LIMIT) } : {}),
+        ...(typeof request.postData === "string"
+          ? { postData: redactBody(request.postData.slice(0, BODY_LIMIT), String((request.headers as Record<string, unknown> | undefined)?.["Content-Type"] || (request.headers as Record<string, unknown> | undefined)?.["content-type"] || "")) }
+          : {}),
         mimeType: request.headers?.["Content-Type"] || request.headers?.["content-type"],
       },
     });
@@ -243,8 +314,10 @@ chrome.debugger?.onEvent.addListener((rawSource, method, rawParams) => {
         const text = String(result?.body ?? "");
         if (captures.get(tabId) !== capture || capture.entries.get(key(source, params.requestId)) !== entry || text.length > BODY_LIMIT) return;
         capture.bytes -= entry.body?.text.length || 0;
-        entry.body = { text, base64: Boolean(result?.base64Encoded) };
-        capture.bytes += text.length;
+        // A JSON reply's credentials (a login's token) are not kept either.
+        const kept = !result?.base64Encoded && /json/i.test(entry.response?.mimeType || "") ? redactBody(text, "application/json") : text;
+        entry.body = { text: kept, base64: Boolean(result?.base64Encoded) };
+        capture.bytes += kept.length;
         trim(capture);
       })
       .catch(() => { capture.missing.add(entry.request.url); })

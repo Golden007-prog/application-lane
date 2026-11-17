@@ -52,7 +52,7 @@ Nothing else is sent anywhere. There is no update check, crash reporting or usag
 
 ## Network capture for issue reports
 
-**Network capture for reports** is off by default. If you turn it on in Settings, the extension records the network requests of tracked application tabs in memory (cookie and authorization headers are dropped) so a report you save can be replayed for debugging. It stays on your computer and is saved only with a report you choose to save. Issue reports are never uploaded automatically; if you share one (for example on GitHub), check it first, since it contains the values you entered.
+**Network capture for reports** is off by default. If you turn it on in Settings, the extension records the network requests of tracked application tabs in memory so a report you save can be replayed for debugging. Cookie and authorization headers are dropped, and the values of passwords, one-time codes, tokens and session keys are removed from the requests, their addresses and JSON replies before anything is kept. It stays on your computer and is saved only with a report you choose to save. Issue reports are never uploaded automatically; if you share one (for example on GitHub), check it first, since it contains the values you entered.
 
 ## Permissions the extension uses
 
@@ -66,7 +66,7 @@ Nothing else is sent anywhere. There is no update check, crash reporting or usag
 
 ## Deleting your data
 
-- **From the dashboard:** **Settings → Your data → Delete local application data** deletes your saved profile, application tracker, generated documents and issue reports.
+- **From the dashboard:** **Settings → Your data → Delete local application data** deletes your saved profile (with a tailoring folder imported into the data folder), application tracker, generated documents, issue reports with their screenshots and network logs, recordings, and your leak-check terms. It keeps your settings, the pairing and any API key; a tailoring folder you keep elsewhere is never touched.
 - **Everything:** stop the backend, delete the data folder listed above and the `Documents/Application Lane` folder, and remove the extension in `chrome://extensions` (which clears its browser storage).
 
 Data already sent to an employer's site or to your drafting provider cannot be recalled by Application Lane; contact them directly.
