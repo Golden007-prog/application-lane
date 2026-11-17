@@ -20,6 +20,7 @@
 #   summary.json   the agent's verdict, title and description
 #   fix.patch      its changes under src/ and tests/, as git diff writes them
 #   agent.log      what the agent printed; setup.log, the clone and install
+#   proxy.log      what the token proxy passed on or refused (paths only)
 #   exit           its exit status
 # Nothing here pushes or posts: github-reports work checks the patch and
 # opens the pull request itself.
@@ -37,31 +38,69 @@ cd "$root"
 # Podman as lane-reports, with nothing of the caller's environment.
 podman_env=(env -i PATH=/usr/local/bin:/usr/bin:/bin HOME="$root/home" XDG_RUNTIME_DIR="$root/run" LANG=C.UTF-8)
 umask 077
-# The token reaches the container through a file only it and lane-reports
-# read, never a command line (which every user can list).
-envfile="$root/run/agent.env"
-printf 'CLAUDE_CODE_OAUTH_TOKEN=%s\n' "$(cat "$root/home/.claude-token")" >"$envfile"
-trap 'rm -f "$envfile"' EXIT
-container() {
-  local outbox="$1" inbox="$2"
+# What every container has: no privileges, a 50-minute limit (--timeout,
+# enforced by Podman), a home of its own that goes with it.
+base=(--rm -i --timeout 3000
+  --userns keep-id --user "$(id -u):$(id -g)"
+  --cap-drop all --security-opt no-new-privileges
+  --pids-limit 4096 --shm-size 1g
+  -e HOME=/home/agent -e LANG=C.UTF-8 -e CI=1 -e JOB_APPLIER_DIR=/nonexistent
+  -e LANE_EXTENSION_DIR=dist/extension-test -e LANE_DEV_TOOLS=0
+  --tmpfs /home/agent:rw,exec,size=8g,mode=1777
+  -v /opt/lane-reports/claude:/usr/local/bin/claude:ro
+  -v "$share:/lane:ro"
+  -w /home/agent)
+# Fetching the repository and its packages: the network (but not this
+# computer's localhost), and no token.
+fetch_box() {
+  local work="$1" outbox="$2"
   shift 2
-  # --timeout: a session is stopped after 50 minutes, by Podman itself.
-  "${podman_env[@]}" podman run --rm -i --timeout 3000 \
+  "${podman_env[@]}" podman run "${base[@]}" \
     --network slirp4netns:allow_host_loopback=false \
-    --userns keep-id --user "$(id -u):$(id -g)" \
-    --cap-drop all --security-opt no-new-privileges \
-    --pids-limit 4096 --shm-size 1g \
-    --env-file "$envfile" \
-    -e HOME=/home/agent -e LANG=C.UTF-8 -e CI=1 -e JOB_APPLIER_DIR=/nonexistent \
-    -e LANE_EXTENSION_DIR=dist/extension-test -e LANE_DEV_TOOLS=0 \
-    --tmpfs /home/agent:rw,exec,size=8g,mode=1777 \
     -v "$root/npm-cache:/home/agent/.npm:rw" \
-    -v /opt/lane-reports/claude:/usr/local/bin/claude:ro \
-    -v "$share:/lane:ro" \
+    -v "$work:/home/agent/work:rw" \
+    -v "$outbox:/outbox:rw" \
+    "$image" bash /lane/inside.sh "$@"
+}
+# The agent: no network at all, and no token. Claude Code reaches the API
+# only through the proxy's socket (token-proxy.mjs, run below as
+# lane-reports, outside the container), which adds the token on the way out
+# and passes on nothing but the Messages API. A report written to steer the
+# agent finds no token to read and nowhere to send anything.
+agent_box() {
+  local work="$1" outbox="$2" inbox="$3" sockets="$4"
+  shift 4
+  "${podman_env[@]}" podman run "${base[@]}" \
+    --network none \
+    -e ANTHROPIC_BASE_URL=http://127.0.0.1:8787 \
+    -e ANTHROPIC_AUTH_TOKEN=held-outside-the-container \
+    -e CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 -e DISABLE_AUTOUPDATER=1 \
+    -v "$work:/home/agent/work:rw" \
+    -v "$sockets:/proxy:rw" \
     -v "$inbox:/inbox:ro" \
     -v "$outbox:/outbox:rw" \
-    -w /home/agent \
     "$image" bash /lane/inside.sh "$@"
+}
+# The proxy, until the session ends; what it passed on or refused goes to
+# <log> (methods, paths and statuses only).
+proxy=""
+work=""
+sockets=""
+cleanup() {
+  [[ -n "$proxy" ]] && kill "$proxy" 2>/dev/null
+  [[ -n "$sockets" ]] && rm -rf "$sockets"
+  [[ -n "$work" ]] && rm -rf "$work"
+  true
+}
+trap cleanup EXIT
+start_proxy() {
+  local log="$1"
+  rm -rf "$sockets" && mkdir -p "$sockets"
+  node "$share/token-proxy.mjs" "$sockets/api.sock" "$root/home/.claude-token" "$log" &
+  proxy=$!
+  for _ in $(seq 50); do [[ -S "$sockets/api.sock" ]] && return 0; sleep 0.1; done
+  echo "lane-reports-agent: the token proxy did not start" >&2
+  return 1
 }
 
 # Whether the session can run, without working on anything.
@@ -90,14 +129,19 @@ if [[ "$number" == --check ]]; then
     setTimeout(() => process.exit(0), 240000);
   ' "$probe_out" &
   probe=$!
-  trap 'kill "$probe" 2>/dev/null; rm -f "$envfile"' EXIT
+  trap 'kill "$probe" 2>/dev/null; cleanup' EXIT
   for _ in $(seq 50); do [[ -s "$probe_out" ]] && break; sleep 0.1; done
   [[ -s "$probe_out" ]] || fail "could not start the localhost probe"
   empty="$root/run/check"
-  rm -rf "$empty" && mkdir -p "$empty/in" "$empty/out"
+  rm -rf "$empty" && mkdir -p "$empty/in" "$empty/out" "$empty/work"
+  work="$empty/work"
+  sockets="$root/run/check-proxy"
   # shellcheck disable=SC2046
-  container "$empty/out" "$empty/in" check "$(cat "$probe_out")" $(hostname -I 2>/dev/null) </dev/null || exit 1
-  echo "OK: the container cannot reach this computer's localhost, its processes or its files, and Claude Code answers in it; lane-reports cannot read your home or the Windows drives."
+  fetch_box "$empty/work" "$empty/out" check-fetch "$(cat "$probe_out")" $(hostname -I 2>/dev/null) </dev/null || exit 1
+  start_proxy "$empty/out/proxy.log" || fail "the token proxy did not start"
+  # shellcheck disable=SC2046
+  agent_box "$empty/work" "$empty/out" "$empty/in" "$sockets" check-agent "$(cat "$probe_out")" $(hostname -I 2>/dev/null) </dev/null || exit 1
+  echo "OK: the containers cannot reach this computer's localhost, its processes or its files; the agent's container has no network and no token, and Claude Code answers in it through the token proxy; lane-reports cannot read your home or the Windows drives."
   exit 0
 fi
 
@@ -109,6 +153,17 @@ outbox="$root/outbox/$number"
 umask 027
 rm -rf "$outbox"
 mkdir -p "$outbox"
+# The repository, fetched with the network; then the agent, without it.
+work="$root/work/$number"
+sockets="$root/run/proxy-$number"
+rm -rf "$work" && install -d -m 0700 "$work"
 status=0
-sed "s/{{ISSUE}}/$number/g" "$share/PROMPT.md" | container "$outbox" "$inbox" work "$number" "$model" || status=$?
+fetch_box "$work" "$outbox" fetch </dev/null || status=$?
+if [[ ! -s "$outbox/exit" ]]; then
+  if start_proxy "$outbox/proxy.log"; then
+    sed "s/{{ISSUE}}/$number/g" "$share/PROMPT.md" | agent_box "$work" "$outbox" "$inbox" "$sockets" work "$number" "$model" || status=$?
+  else
+    status=91
+  fi
+fi
 [[ -s "$outbox/exit" ]] || echo "$status" >"$outbox/exit"

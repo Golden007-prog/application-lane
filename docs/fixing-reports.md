@@ -2,7 +2,7 @@
 
 People share fill problems with **Share on GitHub** (dashboard → Issues), which opens a **Fill report** issue with a cleaned copy of their report attached. This page is for maintainers, of this repository or a fork: how to turn those issues into pull requests with Claude Code, without the reports touching anything private on your computer.
 
-Anyone can open an issue, and a report can be written to steer an AI agent ("ignore your instructions and…"). So a report is never worked on by a session that holds your data or your GitHub sign-in. It goes to an **isolated session**: a container, started by a separate system user, with a fresh copy of the public repository and nothing else. That session writes a patch; a plain script, not an agent, checks it and opens the pull request; and you review it before anything reaches `main`.
+Anyone can open an issue, and a report can be written to steer an AI agent ("ignore your instructions and…"). So a report is never worked on by a session that holds your data or your GitHub sign-in. It goes to an **isolated session**: containers, started by a separate system user, with a fresh copy of the public repository and nothing else. One container fetches the repository and its packages; the agent then works in a second one that has no network at all and no Claude token. Its requests to Claude go through a small proxy that the system user runs outside the container, which adds the token and passes on nothing but the Messages API. So a report written to steer the agent finds no token to read and nowhere to send anything. That session writes a patch; a plain script, not an agent, checks it and opens the pull request; and you review it before anything reaches `main`.
 
 ## What you need
 
@@ -26,7 +26,7 @@ Anyone can open an issue, and a report can be written to steer an AI agent ("ign
    ```bash
    sudo -n -u lane-reports /usr/local/bin/lane-reports-agent --check
    ```
-   It should print `OK: …`. The check confirms that `lane-reports` cannot read your home or the Windows drives, and that inside the container nothing of your files is mounted, your other processes are out of sight, a service on your computer's `localhost` (such as the backend) cannot be reached, and Claude Code answers. Do not work on reports while it prints `FAIL`.
+   It should print `OK: …`. The check confirms that `lane-reports` cannot read your home or the Windows drives, and that inside the containers nothing of your files is mounted, your other processes are out of sight, and a service on your computer's `localhost` (such as the backend) cannot be reached. It also confirms that the agent's container holds no token and cannot reach the internet, and that Claude Code answers in it through the token proxy. Do not work on reports while it prints `FAIL`.
 4. **Labels.** The issue form adds `fill report`. Create that label, and an `accepted` label, in the repository:
    ```bash
    gh label create "fill report" && gh label create accepted
@@ -70,6 +70,6 @@ npm run github-reports -- reply <n> "<text>" [--close]   comment on the issue
 
 ## What the isolation does not cover
 
-- The container can reach the internet (Claude Code needs to). Nothing private is in it to send, but it is not limited to Claude's servers.
-- The isolated session holds its Claude token. If a session were turned against you, the token could be used until you revoke it; it gives no access to your files or your GitHub account.
+- The container that fetches the repository and its packages can reach the internet. It runs no agent and holds no token.
+- The agent can still make Claude requests through the proxy for as long as its session runs (at most 50 minutes), on your subscription's usage. The token itself never enters the container; `lane-reports` holds it, so only a way out of the container and into that user would reach it. What the proxy passed on or refused is in the outbox's `proxy.log`.
 - A pull request from a report is code written from outside input. Read it before merging.

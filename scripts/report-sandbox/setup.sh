@@ -11,10 +11,13 @@
 # folder) starts with rootless Podman. The container clones the public
 # repository afresh every time, has its own process list, and its own
 # network, from which this computer's localhost (your backend) cannot be
-# reached. It installs Podman if it is missing, and keeps in /srv/lane-reports:
+# reached. The agent itself works in a second container with no network at
+# all and no token: its requests to Claude go through a proxy that
+# lane-reports runs outside it (token-proxy.mjs), which adds the token. It installs Podman if it is missing, and keeps in /srv/lane-reports:
 #   home/       lane-reports' home: its Claude token and Podman's images
 #   run/        Podman's runtime folder
 #   npm-cache/  packages downloaded for the container, checked against the lock file on use
+#   work/       each run's clone, removed when the run ends
 #   inbox/      reports you hand it (github-reports work writes them), which it only reads
 #   outbox/     what it leaves for you to read: a verdict and a patch
 # Claude Code is copied to /opt/lane-reports/claude, and the session's
@@ -81,7 +84,7 @@ if ! grep -q "^$user:" /etc/subuid || ! grep -q "^$user:" /etc/subgid; then
 fi
 
 install -d -o root -g root -m 0755 "$root"
-install -d -o "$user" -g "$user" -m 0700 "$root/home" "$root/run" "$root/npm-cache"
+install -d -o "$user" -g "$user" -m 0700 "$root/home" "$root/run" "$root/npm-cache" "$root/work"
 # The inbox is yours; it may only read it.
 install -d -o "$owner" -g "$owner" -m 0750 "$root/inbox"
 setfacl -m u:"$user":rx "$root/inbox"
@@ -134,6 +137,7 @@ remote="https://github.com/$(git -C "$checkout" remote get-url origin | sed -E '
 install -d -o root -g root -m 0755 "$share"
 install -o root -g root -m 0644 "$here/PROMPT.md" "$share/PROMPT.md"
 install -o root -g root -m 0644 "$here/inside.sh" "$share/inside.sh"
+install -o root -g root -m 0644 "$here/token-proxy.mjs" "$share/token-proxy.mjs"
 printf '%s\n' "$image" > "$share/image"
 printf '%s\n' "$remote" > "$share/repository"
 chmod 0644 "$share/image" "$share/repository"
