@@ -254,12 +254,14 @@ export function deterministicAnswer(
     [/^(legal )?middle name$/, "middleName"],
     // The profile keeps one last name: the one the applicant goes by too.
     [/^preferred (last|family|sur) ?name$/, "lastName"],
-    [/^e ?mail( address)?$/, "email"],
+    [/^e ?mail( address)?$|^what is your (personal |preferred |primary |best |current )?e ?mail( address)?$/, "email"],
     // The address typed twice (SuccessFactors' "Retype Email Address").
     [/^(re ?type|confirm|verify|re ?enter|repeat)( your)? e ?mail( address)?$|^e ?mail( address)? (confirmation|again)$/, "email"],
     // (The national number: the country code is asked apart, or is the
     // profile's phoneCountryCode.)
     [/^((home|cell|cellular|mobile|primary) )?(phone|mobile|telephone)( number)?$/, "phone"],
+    // "What is your phone number?" (Workday), "Daytime Phone" (Taleo).
+    [/^what is your ((home|cell|cellular|mobile|primary|daytime|contact) )?(phone|mobile|telephone)( number)?$|^(daytime|day time) (phone|telephone)( number)?$/, "phone"],
     [/^(city|current city|location city|current location)$/, "city"],
     [/^where (do you( currently)? live|are you( currently)? (located|based))$|^(what|which) city do you( currently)? live in$/, "city"],
     // "State / District", "State / Province / Region".
@@ -269,10 +271,10 @@ export function deterministicAnswer(
     [/^(street |mailing |home )?address( line 1)?$/, "address"],
     [secondAddressLine, "addressLine2"],
     // One name or two: "Zip", "Postal code", "Postcode/ZIP".
-    [/^((zip ?code|zip|postal|post ?code)( code)? ?){1,2}$|^please enter the zip code of your primary residence in the united states$|^please provide your post code zip code$/, "postalCode"],
+    [/^((zip ?code|zip|postal|post ?code)( code)? ?){1,2}$|^please enter the zip code of your primary residence in the united states$|^please provide your post code zip code$|^what is your (home |mailing |residential )?(zip|postal|post)( ?code)?( code)?$/, "postalCode"],
     // Also asked as a request, instructions after it: "Please provide your
     // LinkedIn Profile url. Instruction: Navigate to…" (one employer's Workday).
-    [/^linkedin( profile| url| profile url)?$|^(please )?((provide|enter|share|add|paste|include) )?(your )?linkedin( profile)?( page)?( url| link| address)\b/, "linkedin"],
+    [/^linkedin( profile| url| profile url)?$|^(please )?((provide|enter|share|add|paste|include) )?(your )?linkedin( profile)?( page)?( url| link| address)\b|^(please )?(enter|provide) only the url (to|of) your linkedin( profile)?\b/, "linkedin"],
     [/^(website|portfolio|personal website|other website)( url)?$/, "website"],
     [/^github( profile| url| profile url)?$|^(please )?((provide|enter|share|add|paste|include) )?(your )?github( profile)?( page)?( url| link| address)\b/, "github"],
     [/^current (company|employer)$/, "currentCompany"],
@@ -316,11 +318,18 @@ export function deterministicAnswer(
       .join("\n");
   if (/^preferred( first)? name$/.test(label))
     return profile.preferredName || profile.firstName || undefined;
+  // A saved LinkedIn address answers "Do you have a LinkedIn profile?" Yes;
+  // without one the applicant is left to say (they may have one unsaved).
+  if (/^do you have an? linkedin( profile| account| page)?$/.test(label))
+    return profile.linkedin?.trim() ? "Yes" : undefined;
+  // "Physical Address" in one box: the street and where it is.
+  if (/^(physical|residential) address$/.test(label) && /^(text|textarea)$/.test(field.kind) && !field.options.length && profile.address?.trim())
+    return [profile.address, profile.city, [profile.state, profile.postalCode].filter(Boolean).join(" ")].map((part) => (part || "").trim()).filter(Boolean).join(", ");
   // Workday's box that shows the preferred-name fields: ticked only for a
   // name that differs from the first one. The model ticked it from a saved
   // preferred name equal to the first name, and
   // the box stayed ticked through refills for want of an answer to give.
-  if (field.kind === "checkbox" && /^i have a preferred name$/.test(label))
+  if (/^(checkbox|radio|select|combobox)$/.test(field.kind) && /^i have a preferred name$/.test(label))
     return profile.preferredName?.trim() && normalize(profile.preferredName) !== normalize(profile.firstName) ? "Yes" : "No";
   // An area code asked apart from the number (SuccessFactors' "Home/Area
   // Code"): a North American number's first three digits. Others have none
@@ -344,8 +353,10 @@ export function deterministicAnswer(
       return name || undefined;
     return code;
   }
+  // "Middle Name (Optional)": the same box, its note dropped.
+  const bare = label.replace(/ optional$/, "");
   for (const [pattern, key] of keys)
-    if (pattern.test(label)) {
+    if (pattern.test(bare)) {
       const value = key === "phone" ? phone.national : String(profile[key] || "");
       if (!value) return undefined;
       return ["linkedin", "website", "github"].includes(key) ? fullURL(value) : value;
@@ -1052,7 +1063,7 @@ export function profileAnswer(
   // asks per year; a plain salary question gets the yearly figure, or the
   // hourly one said as hourly. A list of ranges is left to the applicant.
   if (/\b(salary|compensation|pay|wage|rate)\b/.test(label) &&
-      /\b(expect\w*|desired|requirements?|range|target|looking for)\b/.test(label) &&
+      (/\b(expect\w*|desired|requirements?|range|target|looking for)\b/.test(label) || /^(wage or salary|salary or wage|salary|wage|pay) required$/.test(label)) &&
       !field.options.length && !/^(checkbox|radio|select)$/.test(field.kind)) {
     // A box that takes only a number gets the figure alone, as does one the
     // site has refused the written figure in ("Invalid number." for "USD

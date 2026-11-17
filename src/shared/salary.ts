@@ -88,7 +88,9 @@ export function salaryAnswer(
 ): { value: string; numeric?: number } | undefined {
   if (!salary || salary.min === undefined) return;
   const label = question.label.toLowerCase();
-  const asked = /\b(hour|hourly|hr)\b|per hour/.test(label)
+  // "salary or hourly wage" lets the applicant give either.
+  const either = /\bsalary or (hourly )?(wage|rate|pay)\b|\b(hourly )?(wage|rate|pay) or salary\b/.test(label);
+  const asked = either ? undefined : /\b(hour|hourly|hr)\b|per hour/.test(label)
     ? "hour"
     : /\b(month|monthly)\b/.test(label)
       ? "month"

@@ -2681,3 +2681,71 @@ test("What city do you live in takes the saved city, and employed by the company
   assert.ok(city && city.startsWith("Blacksburg"), String(city));
   assert.equal(proposals([field("Have you been employed by Acme before?", { kind: "radio", options: ["Yes", "No"] })], applicant)[0]?.value, "No");
 });
+
+// An audit found the model filling these profile questions because no rule
+// answered them (Workday, Tesla, Taleo, Ashby and other forms).
+const rivera = profileSchema.parse({
+  ...profile,
+  firstName: "Alex",
+  middleName: "Quinn",
+  lastName: "Rivera",
+  preferredName: "Lex",
+  email: "alex@example.test",
+  phone: "5405550100",
+  address: "100 Mill Way",
+  city: "Blacksburg",
+  state: "Virginia",
+  postalCode: "24060",
+  linkedin: "linkedin.com/in/alex-rivera",
+  salary: { min: 100000, currency: "$", period: "year" },
+  education: [{ organization: "Penn State", title: "Bachelor of Science", fieldOfStudy: "Information Technology", startDate: "2020-08", endDate: "2024-05" }],
+  answers: [{ question: "When can you start?", answer: "Immediately" }],
+});
+const valueOf = (label: string, overrides: Partial<Field> = {}, who = rivera) => proposals([field(label, overrides)], who)[0]?.value;
+const yesNo = { kind: "radio" as const, options: ["Yes", "No"] };
+
+test("a preferred-name box, middle name and optional preferred name are answered from the name fields", () => {
+  assert.equal(valueOf("I have a preferred name", yesNo), "Yes");
+  assert.equal(valueOf("I have a preferred name", yesNo, profileSchema.parse({ ...rivera, preferredName: "Alex" })), "No");
+  assert.equal(valueOf("Middle Name (Optional)", { required: false }), "Quinn");
+  assert.equal(valueOf("Preferred Name (Optional)", { required: false }), "Lex");
+});
+
+test("a LinkedIn yes/no and a URL-only request are answered from the saved address", () => {
+  assert.equal(valueOf("Do you have a LinkedIn profile?", yesNo), "Yes");
+  assert.equal(valueOf("Do you have a LinkedIn profile?", yesNo, profileSchema.parse({ ...rivera, linkedin: "" })), undefined);
+  assert.equal(valueOf("Please enter only the URL to your LinkedIn profile. Do not include any additional text."), "https://linkedin.com/in/alex-rivera");
+});
+
+test("personal email, phone, home zip and physical address asked as sentences are answered from the profile", () => {
+  assert.equal(valueOf("What is your personal email address?"), "alex@example.test");
+  assert.equal(valueOf("What is your phone number?"), "5405550100");
+  assert.equal(valueOf("* Daytime Phone"), "5405550100");
+  assert.equal(valueOf("What is your home Zip Code?"), "24060");
+  assert.equal(valueOf("Physical Address"), "100 Mill Way, Blacksburg, Virginia 24060");
+  assert.equal(valueOf("Physical Address", { kind: "combobox" }), undefined);
+});
+
+test("a salary asked as 'salary or hourly wage' or 'required' gets the saved yearly figure", () => {
+  assert.equal(valueOf("* What is your desired salary or hourly wage?"), "$100,000");
+  assert.equal(valueOf("Wage Or Salary Required"), "$100,000");
+  // An hourly-only question is still not answered with a yearly figure.
+  assert.equal(valueOf("Desired hourly wage"), undefined);
+});
+
+test("a bachelor's degree in a listed field, and a bachelor's or master's held or under way, are answered Yes", () => {
+  const listed = "* Do you have a bachelor’s degree in information technology, management information systems, computer science, or a related field of study? Yes No";
+  assert.equal(valueOf(listed, yesNo), "Yes");
+  const other = profileSchema.parse({ ...rivera, education: [{ ...rivera.education[0], fieldOfStudy: "Music" }] });
+  assert.equal(valueOf(listed, yesNo, other), undefined);
+  const either = "Currently has, or is in the process of obtaining, a bachelor's or Master's degree";
+  assert.equal(valueOf(either, yesNo), "Yes");
+  const none = profileSchema.parse({ ...rivera, education: [] });
+  assert.equal(valueOf(either, yesNo, none), undefined);
+});
+
+test("an availability or notice period question takes a saved Immediately", () => {
+  assert.equal(valueOf("What is your availability or notice period?"), "Immediately");
+  const weeks = profileSchema.parse({ ...rivera, answers: [{ question: "When can you start?", answer: "Two weeks' notice" }] });
+  assert.equal(valueOf("What is your availability or notice period?", {}, weeks), undefined);
+});

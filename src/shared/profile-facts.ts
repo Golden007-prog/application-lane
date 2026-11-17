@@ -89,11 +89,24 @@ function educationQuestion(field: Field): "current" | "completed" | "highest" | 
   if (/^(do you have|have you (completed|earned|received|obtained)) (a |your )?bachelor s degree$/.test(q)) return "bachelor";
 }
 
+// "Do you have a bachelor's degree in information technology, computer
+// science, or a related field of study?" (a finished bachelor's in one of the
+// listed fields) and "Currently has, or is in the process of obtaining, a
+// bachelor's or Master's degree" (one held or under way).
+function degreeHeldQuestion(field: Field): { levels: string[]; fields?: string[] } | undefined {
+  const q = question(field.label);
+  if (/^currently has or is in the process of obtaining a bachelor s or master s degree$/.test(q)) return { levels: ["bachelor", "master", "mba"] };
+  if (!/^(do you have|have you (completed|earned|received|obtained)) (a |an )?bachelor s degree in .+/.test(q)) return;
+  const listed = field.label.split("?")[0].match(/\bdegree in (.+)$/i)?.[1] || "";
+  const fields = listed.split(/,|\bor\b/i).map(normalize).filter(item => item && !/^(a |an )?(related|similar|equivalent|other)\b/.test(item));
+  return fields.length ? { levels: ["bachelor"], fields } : undefined;
+}
+
 // These questions have a precise profile source or calculation. An absent
 // fact is a reason to leave them for the applicant, not to ask AI to guess.
 export function profileFactQuestion(field: Field): boolean {
   const q = question(field.label);
-  return Boolean(ageTest(field.label) || educationQuestion(field) ||
+  return Boolean(ageTest(field.label) || educationQuestion(field) || degreeHeldQuestion(field) ||
     /^(what (is|s) )?(your )?(current )?age( range| group| bracket)?$|^how old are you$|^(date of birth|birth date|birthdate|dob)( (mm dd yyyy|dd mm yyyy|yyyy mm dd))?$/.test(q));
 }
 
@@ -150,6 +163,15 @@ export function profileFactAnswer(field: Field, profile: Profile, now = new Date
     if (ageInYears(profile.dateOfBirth, now) === undefined) return;
     const value = writtenDate(profile.dateOfBirth, field, profile);
     return value ? { value } : undefined;
+  }
+  const held = degreeHeldQuestion(field);
+  if (held) {
+    const rows = held.fields
+      ? profile.education.filter(row => graduated(row, now) === true)
+      : [...profile.education.filter(row => graduated(row, now) === true), ...currentRows(profile, now)];
+    // Only a Yes the rows establish; another field may be "related".
+    return rows.some(row => held.levels.includes(degreeLevel(row.title)) &&
+      (!held.fields || held.fields.some(item => normalize(row.fieldOfStudy || "").includes(item)))) ? binary(true, field) : undefined;
   }
   const type = educationQuestion(field);
   if (type) {
