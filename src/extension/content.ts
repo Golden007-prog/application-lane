@@ -236,6 +236,9 @@ declare global {
   }
 }
 
+const INVISIBLE_CAPTCHA =
+  "The site verifies submissions with a CAPTCHA you cannot see. If it reports a verification error, reload the page and submit again.";
+
 // A copy left by an earlier build (the extension reloaded since, its own
 // line to the extension cut) gives way to this one, so a page need not be
 // reloaded to take the new build: reloading lost unsaved entries, and on
@@ -1270,12 +1273,13 @@ if (!window.__applicationLane) {
         '[name="g-recaptcha-response"],[name="h-captcha-response"]',
       ),
     ].some((e) => e.value.trim());
+    // Greenhouse's reCAPTCHA Enterprise shows only its corner badge
+    // (size=invisible): rendered, yet nothing to solve before Submit, which
+    // runs it. Read as one to complete, it held the applicant's Submit.
+    const shown = (e: Element) =>
+      rendered(e) && !/[?&]size=invisible(&|$)/.test(e.getAttribute("src") || "") && !e.closest(".grecaptcha-badge");
     if (captchas.length && !solved)
-      blockers.push(
-        captchas.some(rendered)
-          ? "Complete the site’s CAPTCHA if requested."
-          : "The site verifies submissions with a CAPTCHA you cannot see. If it reports a verification error, reload the page and submit again.",
-      );
+      blockers.push(captchas.some(shown) ? "Complete the site’s CAPTCHA if requested." : INVISIBLE_CAPTCHA);
     const next = nextButton();
     const atReview = [
       ...document.querySelectorAll('button, input[type="submit"]'),
@@ -3847,7 +3851,8 @@ if (!window.__applicationLane) {
         nextCount: controls.next.length,
         submit: label("submit"),
         submitCount: controls.submit.length,
-        blockers: snapshot.blockers,
+        // An invisible CAPTCHA runs when Submit is pressed: not a reason to hold it.
+        blockers: snapshot.blockers.filter((blocker) => blocker !== INVISIBLE_CAPTCHA),
         unfinished: snapshot.fields
           .filter((f) => (f.required && !f.value) || f.invalid || f.validationWarning)
           .map((f) => (f.required && !f.value ? `${f.label}: empty` : `${f.label}: ${f.validationWarning || "not accepted"}`).slice(0, 160))
@@ -3862,7 +3867,8 @@ if (!window.__applicationLane) {
       if (command.documentId !== documentId) throw new Error("The page changed since it was checked. Check it again.");
       const kind = command.step === "submit" ? "submit" : "next";
       const snapshot = inspect();
-      if (snapshot.blockers.length) throw new Error(snapshot.blockers[0]);
+      const blocker = snapshot.blockers.find((entry) => entry !== INVISIBLE_CAPTCHA);
+      if (blocker) throw new Error(blocker);
       if (snapshot.fields.some((f) => (f.required && !f.value) || f.invalid || f.validationWarning))
         throw new Error("Some fields on this step are empty or not accepted. Finish them first.");
       const controls = stepControls(document, adapterFor(location.href).next || undefined)[kind];

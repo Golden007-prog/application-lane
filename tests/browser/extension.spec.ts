@@ -21156,6 +21156,44 @@ test("Next step and Submit press only the page's one control, Submit once turned
   await page.close();
 });
 
+test("Submit presses past an invisible reCAPTCHA badge, which the site runs on the press", async () => {
+  const form = "https://jobs.lever.co/stepco/7d1e6c3a-7f0d-4b55-9a8e-1c2d3e4f5a6b/apply";
+  // Greenhouse's reCAPTCHA Enterprise, as captured: only the corner badge is
+  // on screen, its frame is size=invisible, and the token stays empty until
+  // the site's own submit runs it.
+  await context.route(form, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><title>Step Co - Engineer</title>
+        <form class="application-form" onsubmit="event.preventDefault(); window.submitted++">
+          <label>Email<input name="email" type="email" required value="alex@example.test"></label>
+          <div class="application--submit"><button type="submit" class="btn btn--pill" aria-disabled="false">Submit application</button></div>
+        </form>
+        <div><div class="grecaptcha-badge" data-style="bottomright" style="width: 256px; height: 60px; display: block; position: fixed; bottom: 14px; right: -186px; overflow: hidden;"><div class="grecaptcha-logo"><iframe title="reCAPTCHA" width="256" height="60" role="presentation" frameborder="0" scrolling="no" src="https://jobs.lever.co/recaptcha/enterprise/anchor?ar=1&amp;k=fixture&amp;hl=en&amp;size=invisible"></iframe></div><div class="grecaptcha-error"></div><textarea id="g-recaptcha-response-100000" name="g-recaptcha-response" class="g-recaptcha-response" style="width: 250px; height: 40px; display: none;"></textarea></div></div>
+        <script>window.submitted = 0;</script>`,
+    }),
+  );
+  await context.route("https://jobs.lever.co/recaptcha/**", (route) => route.fulfill({ contentType: "text/html", body: "<!doctype html>" }));
+  const page = await context.newPage();
+  await page.goto(form);
+  const tabId = await panel.evaluate(
+    async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url)!.id!,
+    page.url(),
+  );
+  await ui({ type: "TRACK_TAB", tabId });
+  const id = (await state()).applications[0].id;
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 30_000 }).not.toMatch(/^(inspecting|preparing|filling)$/);
+  await ui({ type: "SETTINGS", settings: { ...(await state()).settings, submitButton: "on" } });
+  const check = await ui({ type: "STEP_CHECK", id });
+  expect(check.submit).toBe("Submit application");
+  expect(check.blockers).toEqual([]);
+  // The page's read still says so: a verification error means submitting again.
+  expect((await content(page, { type: "INSPECT" })).data.blockers.join(" ")).toContain("verifies submissions with a CAPTCHA you cannot see");
+  await ui({ type: "PRESS_STEP", id, step: "submit", label: "Submit application" });
+  expect(await page.evaluate(() => (window as any).submitted)).toBe(1);
+  await page.close();
+});
+
 test("Submit finds the page's button on a tab whose script is gone, as after an extension reload", async () => {
   const form = "https://jobs.lever.co/stepco/5c1e6c3a-7f0d-4b55-9a8e-1c2d3e4f5a6b/apply";
   // Greenhouse's own submit control, as captured.
