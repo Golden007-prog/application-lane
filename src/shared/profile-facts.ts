@@ -174,9 +174,13 @@ export function profileFactAnswer(field: Field, profile: Profile, now = new Date
       : held.fields
       ? profile.education.filter(row => graduated(row, now) === true)
       : [...profile.education.filter(row => graduated(row, now) === true), ...currentRows(profile, now)];
-    // Only a Yes the rows establish; another field may be "related".
-    return rows.some(row => held.levels.includes(degreeLevel(row.title)) &&
-      (!held.fields || held.fields.some(item => normalize(row.fieldOfStudy || "").includes(item)))) ? binary(true, field) : undefined;
+    // A Yes the rows establish; another field may be "related", so a
+    // bachelor's in one is left. A No only when every degree under way is a
+    // known level and none is a bachelor's (a master's student, say).
+    if (rows.some(row => held.levels.includes(degreeLevel(row.title)) &&
+      (!held.fields || held.fields.some(item => normalize(row.fieldOfStudy || "").includes(item))))) return binary(true, field);
+    const levels = held.pursuing ? rows.map(row => degreeLevel(row.title)) : [];
+    return levels.length && levels.every(level => level && !held.levels.includes(level)) ? binary(false, field) : undefined;
   }
   const type = educationQuestion(field);
   if (type) {

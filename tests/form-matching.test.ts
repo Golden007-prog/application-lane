@@ -2745,17 +2745,23 @@ test("a bachelor's degree in a listed field, and a bachelor's or master's held o
   assert.equal(valueOf(either, yesNo, none), undefined);
 });
 
-test("a bachelor's under way in listed fields is answered Yes from a current row, and left for the applicant otherwise", () => {
+test("a bachelor's under way in listed fields is answered Yes from a current row, No when only another degree is under way, and left otherwise", () => {
   const asked = "Are you pursuing a Bachelor's Degree in Computer Science, Engineering, or equivalent?";
   const row = { ...rivera.education[0], title: "Bachelor of Science", fieldOfStudy: "Computer Science", startDate: "2024-08-15", endDate: "2099-05-15", current: true };
   const studying = profileSchema.parse({ ...rivera, education: [row] });
   assert.equal(valueOf(asked, yesNo, studying), "Yes");
-  // A finished bachelor's and a master's under way: not the AI step's to answer.
+  // A finished bachelor's and a master's under way: not pursuing one.
   const graduate = profileSchema.parse({ ...rivera, education: [
     { ...row, title: "Master of Science", fieldOfStudy: "Data Science" },
     { ...row, startDate: "2016-08-15", endDate: "2020-05-15", current: false },
   ] });
-  assert.equal(valueOf(asked, yesNo, graduate), undefined);
+  assert.equal(valueOf(asked, yesNo, graduate), "No");
+  // A bachelor's under way in another field may be "equivalent": left.
+  const other = profileSchema.parse({ ...rivera, education: [{ ...row, fieldOfStudy: "History" }] });
+  assert.equal(valueOf(asked, yesNo, other), undefined);
+  // Nothing under way: not known from the rows, left.
+  const done = profileSchema.parse({ ...rivera, education: [{ ...row, endDate: "2020-05-15", current: false }] });
+  assert.equal(valueOf(asked, yesNo, done), undefined);
   assert.equal(profileFactQuestion({ label: asked, kind: "radio", options: ["Yes", "No"] } as never), true);
 });
 
