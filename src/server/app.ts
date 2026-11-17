@@ -264,6 +264,10 @@ export async function createApp(
     // applicant's extension mid-suite showed "A newer build is ready" in
     // unrelated tests' panels.
     extensionDir?: string;
+    // The resume brief and the written answers, replaced by a test that
+    // holds one of them open (generation.ts).
+    tailor?: ConstructorParameters<typeof GenerationQueue>[3];
+    answer?: ConstructorParameters<typeof GenerationQueue>[4];
   } = {},
 ) {
   // The six-digit pairing code (pairing.ts), shown where the backend runs.
@@ -274,7 +278,7 @@ export async function createApp(
   const devTools = devToolsEnabled(process.env, () => existsSync(fileURLToPath(new URL("../../scripts/fixer.ts", import.meta.url))));
   // The live line to the extension, attached with the server below.
   let live: ReturnType<typeof attachLive> | undefined;
-  const queue = new GenerationQueue(store, config, generate);
+  const queue = new GenerationQueue(store, config, generate, options.tailor, options.answer);
   let profileWrite = Promise.resolve();
   const server = createServer(async (req, res) => {
     try {

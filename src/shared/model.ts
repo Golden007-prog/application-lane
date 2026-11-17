@@ -480,7 +480,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-17-pursuing-bachelor";
+export const CONTENT_VERSION = "2026-11-17-early-written-answers";
 export type Proposal = {
   fieldId: string;
   value: string;
@@ -628,6 +628,10 @@ export type GenerationJob = {
   artifacts: Artifact[];
   narrative?: Narrative;
   answerDrafts?: AnswerDraft[];
+  // The step's written answers, checked, published while the documents are
+  // still tailoring so the page need not wait for them. The complete job's
+  // narrative holds them too.
+  earlyAnswers?: { answers: Narrative["answers"]; warnings: string[] };
   fieldDrafts?: FieldFallbackDraft[];
   warnings?: string[];
   fit?: JobFit;
@@ -787,6 +791,9 @@ export type Application = {
   handAnswers?: { question: string; answer: string; at: number }[];
   // Documents being drafted on request, with nothing filled on the page.
   draftJobId?: string;
+  // The job whose early written answers were already put on the page while
+  // its documents were still tailoring (background.ts).
+  earlyAnswered?: string;
   draftError?: string;
   answerSession?: AnswerSession;
   fieldFallbackSession?: FieldFallbackSession;

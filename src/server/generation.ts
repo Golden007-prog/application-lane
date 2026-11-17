@@ -2199,12 +2199,36 @@ export class GenerationQueue {
           })
         : undefined;
       // So are the application answers, from the job-applier profile.
+      let early: { written: WrittenAnswers; answers: Narrative["answers"]; warnings: string[] } | undefined;
       const answering = this.config.tailorDir
         ? this.answer(request, profile, controller.signal).catch(
             (error: Error) => error,
-          ).then((result) => {
+          ).then(async (result) => {
             if (result instanceof Error) for (const id of questionIds) progress!.fail(id, result.message);
-            else progress!.finish(...questionIds);
+            else {
+              progress!.finish(...questionIds);
+              // The answers need neither plan nor letter: check them now and
+              // put them on the running job, so the page has them while the
+              // documents are still tailoring.
+              try {
+                progress!.begin(...questionIds);
+                const first = await this.checkDrafts(request, profile, { written: result }, controller.signal);
+                let kept = first.written?.answers || [];
+                let warnings = [...result.warnings, ...first.warnings];
+                const retried = await this.secondAttempt(request, profile, this.rejectedAnswers(request, result, kept, warnings), controller.signal);
+                if (retried) {
+                  kept = [...kept, ...retried.answers];
+                  warnings = [...this.withoutRetried(warnings, retried.fields), ...retried.warnings];
+                }
+                early = { written: result, answers: kept, warnings: warnings.map((warning) => warning.slice(0, 350)) };
+                job.earlyAnswers = { answers: kept, warnings: early.warnings };
+                progress!.finish(...questionIds);
+              } catch (error) {
+                controller.signal.throwIfAborted();
+                // Checked with the rest, as without this.
+                console.warn("[generation] early answers not published:", (error as Error).message);
+              }
+            }
             return result;
           })
         : undefined;
@@ -2267,21 +2291,35 @@ export class GenerationQueue {
       }
       // A second model reads every answer, letter paragraph and the resume
       // summary against the profile before anything is built or filled.
-      progress.begin("resume", "letter", ...questionIds);
+      // Answers already checked and retried (early) are not checked again.
+      const alreadyChecked = early && written && !(written instanceof Error) ? early : undefined;
+      if (alreadyChecked) {
+        const done = new Set([...alreadyChecked.written.answers.map((a) => a.fieldId), ...alreadyChecked.written.withheld]);
+        narrative = { ...narrative, answers: narrative.answers.filter((answer) => !done.has(answer.fieldId)) };
+        // Their warnings were already given by the early check.
+        narrative.warnings = (narrative.warnings || []).filter((warning) => !alreadyChecked.written.warnings.includes(warning));
+      }
+      progress.begin("resume", "letter", ...(alreadyChecked ? [] : questionIds));
       const checked = await this.checkDrafts(
         request,
         profile,
         {
           narrative,
           plan: plan instanceof Error ? undefined : plan,
-          written: written instanceof Error ? undefined : written,
+          written: written instanceof Error || alreadyChecked ? undefined : written,
         },
         controller.signal,
       );
       narrative = checked.narrative || narrative;
       if (checked.warnings.length)
         narrative.warnings = [...(narrative.warnings || []), ...checked.warnings];
-      if (written && !(written instanceof Error)) {
+      if (alreadyChecked)
+        narrative = {
+          ...narrative,
+          answers: [...alreadyChecked.answers, ...narrative.answers],
+          warnings: [...(narrative.warnings || []), ...alreadyChecked.warnings],
+        };
+      else if (written && !(written instanceof Error)) {
         const retried = await this.secondAttempt(request, profile, this.rejectedAnswers(request, written, narrative.answers, narrative.warnings || []), controller.signal);
         if (retried)
           narrative = {

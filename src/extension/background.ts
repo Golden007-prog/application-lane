@@ -2665,6 +2665,35 @@ async function run(app: Application, operation: number) {
         answered: app.progress.answered.at(-1) === app.progress.current ? app.progress.answered : [...app.progress.answered, app.progress.current].slice(-300),
         current: undefined,
       };
+    // The written answers need no document: put them on the page as soon as
+    // the job has drafted and checked them, once, while the documents go on.
+    // The pass that attaches the documents finds those fields filled.
+    if (job.status === "running" && job.earlyAnswers?.answers.length && modelFills().written && app.earlyAnswered !== job.id) {
+      app.earlyAnswered = job.id;
+      for (const frame of frames) {
+        if (!alive(app, operation)) return;
+        const early: Proposal[] = [];
+        for (const answer of job.earlyAnswers.answers) {
+          const prefix = `${frame.frameId}|`;
+          if (!answer.fieldId.startsWith(prefix)) continue;
+          const field = frame.observation.fields.find((f) => f.id === answer.fieldId.slice(prefix.length));
+          if (!field || field.protected || field.value || leftAsLegal(field.label)) continue;
+          noteAiFilled(app, field.label, answer.value);
+          early.push({ fieldId: field.id, value: answer.value, expectedValue: field.value, revision: field.revision, source: "confirmed-facts" });
+        }
+        if (!early.length) continue;
+        touch(app, "filling", "Writing the answers while the documents are tailored…");
+        await persist();
+        const result = await applyFrame(app, frame, early, operation);
+        if (result.navigationInterrupted) {
+          await reviewInterruptedWrite(app, result.observation);
+          return;
+        }
+        if (!alive(app, operation)) return;
+        frame.observation = result.observation;
+        app.filled += result.results.filter((r: { ok: boolean }) => r.ok).length;
+      }
+    }
     touch(
       app,
       "preparing",

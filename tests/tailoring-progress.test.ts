@@ -186,3 +186,32 @@ test("a later step reports its kept documents as done and drafts only its new qu
   await until(() => second.status === "complete");
   assert.deepEqual(summary(second).map((item) => item[2]), ["done", "done"]);
 });
+
+test("with a tailoring folder the written answers are published on the running job and the final narrative keeps them without drafting again", async () => {
+  const gate = hold();
+  let drafts = 0;
+  const queue = await queueWith({ tailorDir: "unused" }, [
+    async () => {
+      await gate.released;
+      return narrative;
+    },
+    async () => {
+      await gate.released;
+      throw new Error("no tailoring in this test");
+    },
+    async (req) => {
+      drafts++;
+      return { answers: req.fields.filter((f) => f.label !== "Cover letter").map((f) => ({ fieldId: f.id, value: `About ${f.label}`, factIds: [] })), warnings: [], withheld: [], sources: {} };
+    },
+  ]);
+  const job = await queue.enqueue(request([cover, field("Why Acme?")]));
+  await until(() => Boolean(job.earlyAnswers));
+  assert.equal(job.status, "running");
+  assert.deepEqual(job.earlyAnswers!.answers.map((a) => [a.fieldId, a.value]), [["Why Acme?", "About Why Acme?"]]);
+  assert.equal(job.narrative, undefined);
+  gate.release();
+  await until(() => job.status === "complete");
+  assert.equal(drafts, 1);
+  assert.deepEqual(job.narrative!.answers.filter((a) => a.fieldId === "Why Acme?").map((a) => a.value), ["About Why Acme?"]);
+  assert.deepEqual(job.answered!.filter((a) => a.value === "About Why Acme?").length, 1);
+});

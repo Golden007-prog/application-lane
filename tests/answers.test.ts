@@ -983,6 +983,7 @@ test("the queue applies the verifier's reading, keeps withheld questions empty, 
   const config = configSchema.parse({ postingLookup: false, token: "synthetic-token-".repeat(4), model: "fixture", endpoint: "http://127.0.0.1:9/v1", tailorDir: "unused" });
   let seen: Draft[] = [];
   const run = async (verify: (drafts: Draft[]) => Promise<Map<string, Verdict>>, keptAnswer = "From the letter request.", letterBody = "I built a TypeScript web application used by 2,000 students. I use it daily. I did this as an intern. Students used it for course planning. It ran on a small server. I wrote its tests.") => {
+    seen = [];
     const queue = new GenerationQueue(
       store,
       config,
@@ -1017,7 +1018,8 @@ test("the queue applies the verifier's reading, keeps withheld questions empty, 
       }),
       async () => undefined,
       async (drafts) => {
-        seen = drafts;
+        // The written answers are checked when drafted, the rest when the documents are: two readings.
+        seen = [...seen, ...drafts];
         return verify(drafts);
       },
     );

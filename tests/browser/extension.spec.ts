@@ -16,6 +16,7 @@ import { build } from "esbuild";
 import { PDFDocument } from "pdf-lib";
 import { Document, Packer, Paragraph } from "docx";
 import { createApp } from "../../src/server/app";
+import type { GenerationQueue } from "../../src/server/generation";
 import { configSchema } from "../../src/server/store";
 import { profileSchema, type QueueState } from "../../src/shared/model";
 import {
@@ -42,6 +43,9 @@ let origin = "",
   generatorDelay = 450,
   submitted = 0;
 let runtimeGenerate: Generate | undefined;
+// The resume brief and written answers of a backend with a tailoring folder.
+let runtimeTailor: ConstructorParameters<typeof GenerationQueue>[3] | undefined;
+let runtimeAnswer: ConstructorParameters<typeof GenerationQueue>[4] | undefined;
 // Each run copies dist/extension into fresh temp dirs; /tmp is a small tmpfs,
 // so leaked runs eventually fail every test with EDQUOT.
 const scratchDirs: string[] = [];
@@ -207,6 +211,8 @@ test.beforeEach(async () => {
   submitted = 0;
   generatorDelay = 450;
   runtimeGenerate = undefined;
+  runtimeTailor = undefined;
+  runtimeAnswer = undefined;
   const directory = await scratch("lane-browser-");
   backendDirectory = directory;
   appConfig = configSchema.parse({ postingLookup: false,
@@ -239,7 +245,11 @@ test.beforeEach(async () => {
         req,
       );
     },
-    { extensionDir: extensionPath },
+    {
+      extensionDir: extensionPath,
+      tailor: (...args) => (runtimeTailor ? runtimeTailor(...args) : Promise.reject(new Error("no tailoring in this test"))),
+      answer: (...args) => (runtimeAnswer ? runtimeAnswer(...args) : Promise.reject(new Error("no answers in this test"))),
+    },
   );
   app.store.data.profile = structuredClone(profile);
   await app.store.save();
@@ -15358,6 +15368,60 @@ test("a report carries the fill's recording and the page's network traffic, whic
   await panel.bringToFront();
   await showDashboard("issues");
   await expect(panel.getByText(/with recording · network from page load/)).toBeVisible();
+});
+
+// Greenhouse's first step: a resume box and a written question. The answers
+// come from the profile and the posting alone, but the page waited for the
+// resume and letter (a minute and a half) before the first of them was typed.
+test("a step's written answers are on the page while its documents are still being tailored, and the documents attach after", async () => {
+  const checkout = await scratch("lane-tailoring-");
+  await writeFile(join(checkout, "profile.md"), "## Experience\n- Built things.\n");
+  appConfig.tailorDir = checkout;
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  let drafted = 0;
+  runtimeGenerate = async (req, p) => {
+    await held;
+    return groundNarrative(
+      { resume: p.facts.map((f) => ({ factId: f.id, text: f.text })), coverLetter: [{ text: "", factIds: ["fact-1"] }], answers: [] },
+      p,
+      req,
+    );
+  };
+  runtimeTailor = async () => {
+    await held;
+    throw new Error("no tailoring in this test");
+  };
+  runtimeAnswer = async (req) => {
+    drafted++;
+    return {
+      answers: req.fields.filter((f) => /describe/i.test(f.label)).map((f) => ({ fieldId: f.id, value: "Built interfaces at Acme.", factIds: [] })),
+      warnings: [],
+      withheld: [],
+      sources: {},
+    };
+  };
+  const page = await context.newPage();
+  await page.goto(`${origin}/early-answers`);
+  const writes = await page.locator("[name=experience]").evaluateHandle((element) => {
+    const log: string[] = [];
+    element.addEventListener("input", () => log.push((element as HTMLTextAreaElement).value));
+    return log;
+  });
+  await enqueue([page]);
+  await expect(page.locator("[name=email]")).toHaveValue(profile.email, { timeout: 15000 });
+  // Held: neither document is made, yet the answer is already written.
+  await expect(page.locator("[name=experience]")).toHaveValue("Built interfaces at Acme.", { timeout: 20000 });
+  expect(await page.locator("[name=resume]").evaluate((input: HTMLInputElement) => input.files?.length || 0)).toBe(0);
+  expect((await state()).applications[0].jobId).toBeTruthy();
+  release();
+  await expect.poll(async () => page.locator("[name=resume]").evaluate((input: HTMLInputElement) => input.files?.length || 0), { timeout: 30000 }).toBe(1);
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 15000 }).toMatch(/awaiting-user|ready/);
+  await expect(page.locator("[name=experience]")).toHaveValue("Built interfaces at Acme.");
+  expect(drafted).toBe(1);
+  // Written once: the documents' pass found it there.
+  expect(await writes.jsonValue()).toEqual(["Built interfaces at Acme."]);
+  delete appConfig.tailorDir;
 });
 
 // iCIMS' sign-in step asks only for an email and a phone. Both were
