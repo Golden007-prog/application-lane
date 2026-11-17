@@ -34,13 +34,21 @@ Local files are not encrypted by Application Lane; they are protected by your co
 
 ## What leaves your computer, and when
 
-**Your drafting provider.** When Application Lane drafts a résumé, cover letter, answer, fit check or field suggestion, it sends the relevant profile facts and job text to the provider you chose in **Settings → Drafting**:
+**Your drafting provider.** When Application Lane drafts something for you, it sends what that draft needs to the provider you chose in **Settings → Drafting**:
 
 - Claude Code CLI (Anthropic), or
 - Codex CLI (OpenAI), or
 - an OpenAI-compatible API endpoint you configure (which may be a model running on your own computer).
 
-That provider's own privacy policy and terms apply to what it receives. If you choose no provider, nothing is sent for drafting; filling from your profile still works.
+What each kind of draft sends:
+
+- **Résumé and cover letter:** your confirmed facts, your education and work history, and the job posting. With a tailoring folder, also the Positioning, Education, Skills inventory, Experience, Projects, Reusable STAR stories and Known gaps sections of your `profile.md` and the Education timeline, Logistics and Default stances sections of `preferences.md`; the contact details at the top of `profile.md` are not sent.
+- **Written answers:** the same, plus the questions and what you chose in the form's other list and choice fields, except sensitive ones (gender, race, disability, veteran status, work authorization, criminal history, pay and similar).
+- **Fit check:** your confirmed facts, education and work history, skills, work authorization by country, and city and state, with the posting.
+- **The second check** of a draft (Settings → Processing → Document checking): the draft, the parts of your profile it may rest on, and the posting.
+- **AI filling** of fields your profile did not answer (Settings → AI filling): each field's label, options and section, your saved answers and confirmed facts, and the saved details those fields are about. That can include your name, email, phone and address for contact fields; your equal-opportunity answers for those questions; your work authorization and expected pay; your references' names, relationships, phone numbers and emails for a references question; and your legal and eligibility details for a legal question, only if you allow AI to answer those or have saved such details.
+
+With **AI filling** set to *Profile only*, fields are filled from your profile alone; documents and written answers are still drafted when a fill needs them. That provider's own privacy policy and terms apply to what it receives. If you choose no provider, nothing is sent for drafting; filling from your profile still works.
 
 **Job sites you open.** The extension reads and fills the application pages you track, in your browser, the same as if you typed into them. Values it fills become part of the application you submit to that employer. It asks for access to a site only when you grant it.
 

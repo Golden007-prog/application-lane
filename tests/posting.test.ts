@@ -147,12 +147,14 @@ test("a linked posting page is read from its schema.org JobPosting, else from it
 
 test("only a public https posting page is fetched, redirects included", async () => {
   assert.equal(publicPostingURL("http://careers.example.com/job/1"), undefined);
-  for (const host of ["localhost", "127.0.0.1", "10.0.0.5", "192.168.1.2", "172.20.0.1", "[::1]", "printer.local"])
+  for (const host of ["localhost", "127.0.0.1", "10.0.0.5", "192.168.1.2", "172.20.0.1", "[::1]", "printer.local", "[::ffff:7f00:1]", "100.64.0.1"])
     assert.equal(publicPostingURL(`https://${host}/job`), undefined, host);
   assert.ok(publicPostingURL("https://careers.example.com/job/1"));
   const asked: string[] = [];
   const page = `<html><body><main><p>${long.repeat(3)}</p></main></body></html>`;
+  const lookup = async () => ["93.184.215.14"];
   const reached = await fetchPostingPage("https://careers.example.com/job/1", {
+    lookup,
     fetch: async (url: string) => {
       asked.push(url);
       return url.endsWith("/job/1")
@@ -166,6 +168,7 @@ test("only a public https posting page is fetched, redirects included", async ()
   const internal: string[] = [];
   assert.equal(
     await fetchPostingPage("https://careers.example.com/job/2", {
+      lookup,
       fetch: async (url: string) => {
         internal.push(url);
         return new Response("", { status: 302, headers: { location: "https://127.0.0.1/admin" } });

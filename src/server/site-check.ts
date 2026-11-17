@@ -1,4 +1,5 @@
 import { configs } from "../engine/config/catalog";
+import { fetchPublic, lookupAll, type Lookup } from "./public-url";
 
 // Which site an opening is applied on, and whether a site rule covers it,
 // known before the applicant opens it: Microsoft's careers site
@@ -75,24 +76,22 @@ export function siteOfPage(html: string): SiteCheck | undefined {
   return undefined;
 }
 
-export async function checkSite(url: string, fetcher: typeof fetch = fetch): Promise<SiteCheck> {
+export async function checkSite(url: string, fetcher: typeof fetch = fetch, lookup: Lookup = lookupAll): Promise<SiteCheck> {
   const direct = siteOfAddress(url);
   if (direct) return direct;
-  // Reserved names (RFC 2606) are no one's careers page: never fetched.
   try {
-    if (/(^|\.)(test|example|invalid|localhost)$/i.test(new URL(url).hostname)) return { by: "none" };
-  } catch {
-    return { by: "none" };
-  }
-  try {
-    const response = await fetcher(url, {
-      redirect: "follow",
+    // Only a public page, and only public pages it redirects to: a listing
+    // is someone else's text, and may name this computer or its network
+    // (public-url.ts). Reserved names (RFC 2606) are no one's careers page.
+    const fetched = await fetchPublic(url, {
       headers: { "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130 Safari/537.36", accept: "text/html" },
       signal: AbortSignal.timeout(8_000),
-    });
+    }, { fetch: fetcher, lookup, protocols: ["https:", "http:"] });
+    if (!fetched) return { by: "none" };
+    const { response, url: final } = fetched;
     // Sent on to an ATS by the server itself.
-    const landed = response.url && response.url !== url ? siteOfAddress(response.url) : undefined;
-    if (landed?.ats) return { ats: landed.ats, via: response.url, by: "page" };
+    const landed = final.href !== url ? siteOfAddress(final.href) : undefined;
+    if (landed?.ats) return { ats: landed.ats, via: final.href, by: "page" };
     if (!response.ok) return { by: "none" };
     const page = siteOfPage((await response.text()).slice(0, 2_000_000));
     if (page) return page;
@@ -108,13 +107,14 @@ export async function checkSites(
   cache: Map<string, SiteCheck>,
   fetcher: typeof fetch = fetch,
   concurrency = 6,
+  lookup: Lookup = lookupAll,
 ): Promise<Map<string, SiteCheck>> {
   const pending = [...new Set(urls)].filter((url) => !cache.has(url));
   let next = 0;
   await Promise.all(Array.from({ length: Math.min(concurrency, pending.length) }, async () => {
     while (next < pending.length) {
       const url = pending[next++];
-      cache.set(url, await checkSite(url, fetcher));
+      cache.set(url, await checkSite(url, fetcher, lookup));
     }
   }));
   return cache;

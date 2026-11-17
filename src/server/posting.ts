@@ -15,6 +15,7 @@ export type Posting = {
   source: "Greenhouse" | "Lever" | "Ashby" | "Workday" | "Oracle" | "Workable" | "SmartRecruiters" | "iCIMS" | "Posting page" | "Pasted";
 };
 
+import { fetchPublic, publicURL, type Lookup } from "./public-url";
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 const entities: Record<string, string> = {
@@ -333,16 +334,9 @@ export function atsPostingPage(raw: string): string | undefined {
 // JobPosting data, which names the title, company and description; others
 // are read as text. Only https pages on public hosts, at most three
 // redirects, each checked.
-const privateHost = /^(localhost|.*\.local|.*\.internal|127\.|10\.|0\.|169\.254\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|\[?(::1|f[cd][0-9a-f]{2}:|fe80:))/i;
+// (The name and address checks, and the redirects, are public-url.ts's.)
 export function publicPostingURL(raw: string): URL | undefined {
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return;
-  }
-  if (url.protocol !== "https:" || privateHost.test(url.hostname)) return;
-  return url;
+  return publicURL(raw, ["https:"]);
 }
 
 type JobPosting = { "@type"?: unknown; title?: unknown; name?: unknown; description?: unknown; hiringOrganization?: { name?: unknown } | unknown; jobLocation?: unknown };
@@ -400,22 +394,14 @@ export function postingFromPage(html: string): Omit<Posting, "source"> | undefin
 
 export async function fetchPostingPage(
   raw: string,
-  options: { fetch?: Fetch; signal?: AbortSignal } = {},
+  options: { fetch?: Fetch; signal?: AbortSignal; lookup?: Lookup } = {},
 ): Promise<Posting | undefined> {
-  const fetcher = options.fetch || fetch;
-  let url = publicPostingURL(raw);
-  for (let hop = 0; url && hop < 4; hop++) {
-    const response = await fetcher(url.href, {
-      headers: { Accept: "text/html,application/xhtml+xml" },
-      redirect: "manual",
-      signal: AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(15_000)]),
-    }).catch(() => undefined);
-    if (!response) return;
-    if (response.status >= 300 && response.status < 400) {
-      const location = response.headers.get("location");
-      url = location ? publicPostingURL(new URL(location, url).href) : undefined;
-      continue;
-    }
+  const fetched = await fetchPublic(raw, {
+    headers: { Accept: "text/html,application/xhtml+xml" },
+    signal: AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(15_000)]),
+  }, { fetch: options.fetch as typeof fetch | undefined, lookup: options.lookup, protocols: ["https:"], hops: 3 }).catch(() => undefined);
+  if (fetched) {
+    const { response } = fetched;
     if (!response.ok || !/html|xml/i.test(response.headers.get("content-type") || "text/html")) return;
     const html = (await response.text()).slice(0, 3_000_000);
     const posting = postingFromPage(html);

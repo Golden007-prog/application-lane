@@ -1,7 +1,7 @@
 import { readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { DraftProvider, Field, GenerationRequest, Narrative, Profile } from "../shared/model";
+import { sensitiveQuestion, type DraftProvider, type Field, type GenerationRequest, type Narrative, type Profile } from "../shared/model";
 import type { Config } from "./store";
 import {
   cliNotice,
@@ -211,10 +211,14 @@ const leftFor = (field: Field, reason: string) =>
   `Left "${shortLabel(field.label)}" for you: ${reason}.`.slice(0, 350);
 
 // The form's other fields with something chosen in them, which a follow-up
-// question may refer to ("the work you listed above").
+// question may refer to ("the work you listed above"). Not the sensitive
+// ones (gender, race, disability, veteran status, authorization, criminal
+// history, pay): what the applicant chose there is not sent to the drafting
+// provider to write an answer with.
 function pageFields(request: GenerationRequest, asked: Set<Field>) {
   return request.fields
     .filter((field) => !asked.has(field) && field.label.trim() && !/file|password|hidden/.test(field.kind))
+    .filter((field) => !sensitiveQuestion.test(`${field.question || ""} ${field.label}`))
     .filter((field) => field.options.length || ["select", "combobox", "radio", "checkbox"].includes(field.kind))
     .slice(0, 30)
     .map((field) => ({

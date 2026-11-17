@@ -594,6 +594,10 @@ test("questions the model cannot answer are skipped with a reason, and follow-up
     field("What product would you build at Acme?"),
     field("Based on the engineering work you listed above, what interests you most?"),
     field("Which area interests you most?", { kind: "select", options: ["Backend/Infrastructure", "Frontend"], value: "Backend/Infrastructure" }),
+    // What the applicant chose in sensitive questions is not sent to write an answer with.
+    field("Gender", { kind: "select", options: ["Female", "Male", "Decline"], value: "Female" }),
+    field("Do you have a disability?", { kind: "radio", options: ["Yes", "No"], value: "No" }),
+    field("Are you legally authorized to work in the United States?", { kind: "select", options: ["Yes", "No"], value: "Yes" }),
   ];
   const context = await skillContext(await checkout());
   const result = await writeAnswers(config, request(fields), profile, context, new AbortController().signal);
