@@ -88,7 +88,10 @@ let tree = "";
 let build: { builtAt: number; commit: string } | undefined;
 // The steps a complete run has, builds aside (a build is reused when the
 // tree was built before): fewer means the run stopped part way.
-const expected = kind === "full" ? 3 : kind === "site" ? 1 + (Math.min(5, many("capture").length) || 1) : 1;
+// Replaying saved forms needs the evaluation harness (eval/check.ts), which
+// only the maintainer's private checkout has: elsewhere the step is left out.
+const canReplay = existsSync(join(checkout, "eval", "check.ts"));
+const expected = kind === "full" ? 3 : kind === "site" ? 1 + (canReplay ? Math.min(5, many("capture").length) || 1 : 0) : 1;
 // --without: the tree with these files as committed, where the named tests
 // have to fail. The run succeeds when they do.
 const without = many("without");
@@ -422,10 +425,12 @@ if (kind === "site") {
   // Test names say which site they come from ("the captured Workday Skills…").
   const anyCase = [...site!].map((char) => (/[a-z]/i.test(char) ? `[${char.toLowerCase()}${char.toUpperCase()}]` : char.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))).join("");
   steps.push(await browser(dir, `browser tests naming ${site}`, { grep: anyCase }, []));
-  phase = "replays";
-  record();
-  const captures = many("capture").slice(0, 5);
-  if (captures.length) for (const capture of captures) steps.push(await replay(dir, `replay ${capture.slice(0, 8)}`, capture, true));
-  else steps.push(await replay(dir, `replay of ${site}'s saved forms`, site!, false));
+  if (canReplay) {
+    phase = "replays";
+    record();
+    const captures = many("capture").slice(0, 5);
+    if (captures.length) for (const capture of captures) steps.push(await replay(dir, `replay ${capture.slice(0, 8)}`, capture, true));
+    else steps.push(await replay(dir, `replay of ${site}'s saved forms`, site!, false));
+  } else console.log("Saved-form replays left out: they need eval/check.ts, which this checkout does not have.");
 }
 finish();

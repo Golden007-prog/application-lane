@@ -4624,6 +4624,7 @@ test("real extension prepares multiple tabs, attaches isolated documents, and ne
 });
 
 test("AI response recovery prepares parallel drafts, shows warnings, and cannot write into an edited lane", async () => {
+  test.setTimeout(120_000);
   const started = new Set<string>();
   const providerServer = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
@@ -4693,9 +4694,12 @@ test("AI response recovery prepares parallel drafts, shows warnings, and cannot 
       .toBe(true);
     await pages[3].bringToFront();
     await pages[3].locator("[name=email]").fill("human@example.test");
+    // The hung provider's application gives up in about 4 s when this test
+    // runs alone, but its drafting took 28 s twice in the full suite, with
+    // three tests at once (cause not found): the wait allows for that.
     await expect
       .poll(async () => (await state()).applications.map((a) => a.status), {
-        timeout: 25000,
+        timeout: 60000,
       })
       .toEqual(["awaiting-user", "awaiting-user", "awaiting-user", "paused"]);
     const apps = (await state()).applications;

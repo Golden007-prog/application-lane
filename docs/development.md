@@ -90,4 +90,4 @@ Never commit anything from a data folder, `transcripts/`, or real résumés and 
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and pull request: install, type check, unit tests, both builds and packaging. The browser suite can be run by hand from the Actions tab (`workflow_dispatch`).
+`.github/workflows/ci.yml` runs on every push and pull request: install, type check, unit tests, both builds and packaging. On pull requests and pushes to `main` it also runs a browser smoke job: eight tests that guard what the extension promises (it never submits or presses Next on its own, an edit pauses a fill, and it signs and fills AI answers only as set), capped at 15 minutes. The whole browser suite runs nightly, and by hand from the Actions tab (`workflow_dispatch`).
