@@ -93,13 +93,16 @@ function educationQuestion(field: Field): "current" | "completed" | "highest" | 
 // science, or a related field of study?" (a finished bachelor's in one of the
 // listed fields) and "Currently has, or is in the process of obtaining, a
 // bachelor's or Master's degree" (one held or under way).
-function degreeHeldQuestion(field: Field): { levels: string[]; fields?: string[] } | undefined {
+// "Are you pursuing a Bachelor's Degree in Computer Science, Engineering, or
+// equivalent?" asks for one under way now (pursuing: true).
+function degreeHeldQuestion(field: Field): { levels: string[]; fields?: string[]; pursuing?: boolean } | undefined {
   const q = question(field.label);
   if (/^currently has or is in the process of obtaining a bachelor s or master s degree$/.test(q)) return { levels: ["bachelor", "master", "mba"] };
-  if (!/^(do you have|have you (completed|earned|received|obtained)) (a |an )?bachelor s degree in .+/.test(q)) return;
+  const pursuing = /^are you (currently )?(pursuing|working (toward|towards)|enrolled in) (a |an )?bachelor s degree in .+/.test(q);
+  if (!pursuing && !/^(do you have|have you (completed|earned|received|obtained)) (a |an )?bachelor s degree in .+/.test(q)) return;
   const listed = field.label.split("?")[0].match(/\bdegree in (.+)$/i)?.[1] || "";
   const fields = listed.split(/,|\bor\b/i).map(normalize).filter(item => item && !/^(a |an )?(related|similar|equivalent|other)\b/.test(item));
-  return fields.length ? { levels: ["bachelor"], fields } : undefined;
+  return fields.length ? { levels: ["bachelor"], fields, ...(pursuing ? { pursuing } : {}) } : undefined;
 }
 
 // These questions have a precise profile source or calculation. An absent
@@ -166,7 +169,9 @@ export function profileFactAnswer(field: Field, profile: Profile, now = new Date
   }
   const held = degreeHeldQuestion(field);
   if (held) {
-    const rows = held.fields
+    const rows = held.pursuing
+      ? currentRows(profile, now)
+      : held.fields
       ? profile.education.filter(row => graduated(row, now) === true)
       : [...profile.education.filter(row => graduated(row, now) === true), ...currentRows(profile, now)];
     // Only a Yes the rows establish; another field may be "related".

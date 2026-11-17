@@ -10,6 +10,7 @@ import { canonicalAnswer, pickOption as pickListOption } from "../src/shared/ans
 import { deterministicAnswer, nameVariants, postingGuess, proposals } from "../src/shared/matching";
 import { configPassTimeout, transitionTiming } from "../src/shared/timing";
 import { degreeAliases } from "../src/shared/education";
+import { profileFactQuestion } from "../src/shared/profile-facts";
 
 test("authorization never invents documentary proof or temporary immigration status", () => {
   const p = us(profile, "Yes", "No");
@@ -2742,6 +2743,20 @@ test("a bachelor's degree in a listed field, and a bachelor's or master's held o
   assert.equal(valueOf(either, yesNo), "Yes");
   const none = profileSchema.parse({ ...rivera, education: [] });
   assert.equal(valueOf(either, yesNo, none), undefined);
+});
+
+test("a bachelor's under way in listed fields is answered Yes from a current row, and left for the applicant otherwise", () => {
+  const asked = "Are you pursuing a Bachelor's Degree in Computer Science, Engineering, or equivalent?";
+  const row = { ...rivera.education[0], title: "Bachelor of Science", fieldOfStudy: "Computer Science", startDate: "2024-08-15", endDate: "2099-05-15", current: true };
+  const studying = profileSchema.parse({ ...rivera, education: [row] });
+  assert.equal(valueOf(asked, yesNo, studying), "Yes");
+  // A finished bachelor's and a master's under way: not the AI step's to answer.
+  const graduate = profileSchema.parse({ ...rivera, education: [
+    { ...row, title: "Master of Science", fieldOfStudy: "Data Science" },
+    { ...row, startDate: "2016-08-15", endDate: "2020-05-15", current: false },
+  ] });
+  assert.equal(valueOf(asked, yesNo, graduate), undefined);
+  assert.equal(profileFactQuestion({ label: asked, kind: "radio", options: ["Yes", "No"] } as never), true);
 });
 
 test("an availability or notice period question takes a saved Immediately", () => {
