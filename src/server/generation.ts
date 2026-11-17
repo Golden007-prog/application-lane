@@ -46,6 +46,7 @@ import { checkers, sentences, verifier, withoutSpans, type Draft, type Verifier 
 import { applicationGraduation, applicationProfile, withGraduation } from "./profile-sync";
 import { assessJobFit, unknownFit, type FitAssessor } from "./job-fit";
 import { fitAnswerLength } from "../shared/questions";
+import { TailoringProgress } from "./tailoring-progress";
 
 // What the drafting calls are told beyond the request itself. A request whose
 // description is empty has no readable posting.
@@ -1883,6 +1884,7 @@ export class GenerationQueue {
       mark = Date.now();
     };
     job.status = "running";
+    let progress: TailoringProgress | undefined;
     try {
       await this.store.save();
       if (request.purpose === "field-fallback") {
@@ -1958,10 +1960,18 @@ export class GenerationQueue {
       const graduation = await applicationGraduation(this.config, request.title);
       if (graduation) profile = withGraduation(profile, graduation);
       if (request.purpose === "answers") {
+        progress = new TailoringProgress(job);
+        for (const field of request.fields.filter(applicationQuestion))
+          if (!request.questionIds || request.questionIds.includes(field.id))
+            progress.add(`question:${field.id}`, shortLabel(field.label), "question", ["Drafting", "Checking"]);
+        progress.begin(...job.progress!.map((item) => item.id));
         const written = await this.answer(request, profile, controller.signal);
+        progress.finish(...job.progress!.map((item) => item.id));
+        progress.begin(...job.progress!.map((item) => item.id));
         const checked = await this.checkDrafts(request, profile, { written }, controller.signal);
         let answers = checked.written?.answers || [];
         const retried = await this.secondAttempt(request, profile, this.rejectedAnswers(request, written, answers, [...written.warnings, ...checked.warnings]), controller.signal);
+        progress.finish(...job.progress!.map((item) => item.id));
         if (retried) {
           answers = [...answers, ...retried.answers];
           written.warnings = [...this.withoutRetried(written.warnings, retried.fields), ...retried.warnings];
@@ -2025,7 +2035,17 @@ export class GenerationQueue {
         )
         .sort((a, b) => b.createdAt - a.createdAt)[0];
       const questions = request.fields.filter(narrativeField);
+      progress = new TailoringProgress(job);
+      const questionItems = () => {
+        for (const field of questions) progress!.add(`question:${field.id}`, shortLabel(field.label), "question", ["Drafting", "Checking"]);
+      };
       if (previous && (!questions.length || this.config.tailorDir)) {
+        // The documents are kept from the earlier step; only questions not
+        // answered before are drafted here.
+        progress.add("resume", "Tailored resume", "document", ["Reuse"]);
+        if (letter) progress.add("letter", "Cover letter", "document", ["Reuse"]);
+        progress.complete("resume", "letter");
+        questionItems();
         // Warnings about the earlier step's answers do not carry over, nor
         // does which provider failed back then: nothing is drafted by a
         // provider here, and "Codex could not draft this" on a reused
@@ -2060,20 +2080,27 @@ export class GenerationQueue {
             (job.answered ||= []).push(before);
           }
         }
+        progress.complete(...questions.filter((field) => !fresh.includes(field.id)).map((field) => `question:${field.id}`));
+        const freshItems = fresh.map((id) => `question:${id}`);
         if (fresh.length) {
+          progress.begin(...freshItems);
           const written = await this.answer({ ...request, questionIds: fresh }, profile, controller.signal).catch(
             (error: Error) => error,
           );
           if (written instanceof Error) {
+            for (const id of freshItems) progress.fail(id, written.message);
             controller.signal.throwIfAborted();
             warnings.push(
               `Application answers could not be written from your tailoring notes. ${written.message}`.slice(0, 350),
             );
           } else {
+            progress.finish(...freshItems);
+            progress.begin(...freshItems);
             const checked = await this.checkDrafts(request, profile, { written }, controller.signal);
             let drafted = checked.written?.answers || [];
             const noted = [...written.warnings, ...checked.warnings];
             const retried = await this.secondAttempt(request, profile, this.rejectedAnswers(request, written, drafted, noted), controller.signal);
+            progress.finish(...freshItems);
             if (retried) drafted = [...drafted, ...retried.answers];
             const said = retried ? [...this.withoutRetried(noted, retried.fields), ...retried.warnings] : noted;
             warnings.push(...said);
@@ -2107,17 +2134,31 @@ export class GenerationQueue {
         job.status = "complete";
         return;
       }
+      const tailorDir = Boolean(this.config.tailorDir);
+      progress.add("resume", "Tailored resume", "document", tailorDir ? ["Choosing what to include", "Checking", "Building"] : ["Building"]);
+      if (letter) progress.add("letter", "Cover letter", "document", ["Writing", "Checking", "Building"]);
+      questionItems();
+      const questionIds = questions.map((field) => `question:${field.id}`);
+      progress.begin(...(tailorDir ? ["resume"] : []), ...(letter ? ["letter"] : []), ...questionIds);
       // The resume brief is its own request, made alongside the narrative.
       const planning = this.config.tailorDir
         ? this.tailor(request, profile, controller.signal, { graduation }).catch(
             (error: Error) => error,
-          )
+          ).then((result) => {
+            if (result instanceof Error) progress!.fail("resume", result.message);
+            else progress!.finish("resume");
+            return result;
+          })
         : undefined;
       // So are the application answers, from the job-applier profile.
       const answering = this.config.tailorDir
         ? this.answer(request, profile, controller.signal).catch(
             (error: Error) => error,
-          )
+          ).then((result) => {
+            if (result instanceof Error) for (const id of questionIds) progress!.fail(id, result.message);
+            else progress!.finish(...questionIds);
+            return result;
+          })
         : undefined;
       const drafting: DraftRequest = { ...request, letter, ...(pageText ? { pageText } : {}) };
       let narrative = await this.generate(
@@ -2125,6 +2166,7 @@ export class GenerationQueue {
         profile,
         controller.signal,
       ).finally(async () => { await planning; await fitting; });
+      progress.finish("letter", ...(tailorDir ? [] : questionIds));
       const plan = await planning;
       const written = await answering;
       job.fit = await fitting;
@@ -2177,6 +2219,7 @@ export class GenerationQueue {
       }
       // A second model reads every answer, letter paragraph and the resume
       // summary against the profile before anything is built or filled.
+      progress.begin("resume", "letter", ...questionIds);
       const checked = await this.checkDrafts(
         request,
         profile,
@@ -2200,6 +2243,7 @@ export class GenerationQueue {
           };
       }
       job.answered = answeredRecord(request.fields, narrative.answers, narrative.warnings || []);
+      progress.finish(...(tailorDir ? ["resume"] : []), "letter", ...questionIds);
       lap("verifying");
       // A requirement the applicant does not meet leads the card.
       const eligibility = plan && !(plan instanceof Error) ? plan.eligibility : [];
@@ -2216,6 +2260,7 @@ export class GenerationQueue {
       // A job-applier problem is reported on the card and the laid-out
       // documents go instead: a plain resume beats no resume.
       let tailored: TailoredDocuments | undefined;
+      progress.begin("resume", "letter");
       if (plan)
         tailored = await (
           plan instanceof Error
@@ -2249,6 +2294,7 @@ export class GenerationQueue {
           tailored,
         },
       );
+      progress.finish("resume", "letter");
       // A rendering problem belongs on the application card, next to whatever
       // the draft itself had to say.
       warnings.unshift(...(tailored?.warnings || []));
@@ -2266,6 +2312,7 @@ export class GenerationQueue {
       job.status = "complete";
     } catch (error) {
       job.status = controller.signal.aborted ? "cancelled" : "failed";
+      progress?.failUnfinished(error instanceof Error ? error.message : "Generation failed.");
       job.error =
         error instanceof Error
           ? error.message.slice(0, 400)

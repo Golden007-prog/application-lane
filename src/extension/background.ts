@@ -1303,6 +1303,10 @@ async function draftDocuments(app: Application) {
   schedule();
   return state;
 }
+// What a job is still preparing, item by item, for the panel's bars.
+function tailoringOf(job: GenerationJob) {
+  return ["queued", "running"].includes(job.status) && job.progress?.length ? job.progress : undefined;
+}
 async function pollDocumentDrafts() {
   const drafting = state.applications.filter((app) => app.draftJobId);
   await Promise.allSettled(drafting.map(async (app) => {
@@ -1310,8 +1314,15 @@ async function pollDocumentDrafts() {
     try {
       const job: GenerationJob = await api(`/v1/jobs/${id}`);
       if (app.draftJobId !== id) return;
-      if (["queued", "running"].includes(job.status)) return;
+      if (["queued", "running"].includes(job.status)) {
+        if (JSON.stringify(app.tailoring) !== JSON.stringify(tailoringOf(job))) {
+          app.tailoring = tailoringOf(job);
+          await persist();
+        }
+        return;
+      }
       app.draftJobId = undefined;
+      app.tailoring = undefined;
       if (job.status === "complete" && job.artifacts.length) {
         app.artifacts = job.artifacts;
         app.documentJobId = job.id;
@@ -2534,6 +2545,7 @@ async function run(app: Application, operation: number) {
   if (app.jobId && !app.generationKey) app.generationKey = key;
   let job: GenerationJob = await api(`/v1/jobs/${app.jobId}`);
   if (!alive(app, operation)) return;
+  app.tailoring = tailoringOf(job);
   if (
     job.operation !== operation ||
     job.applicationId !== app.id ||
@@ -2609,6 +2621,7 @@ async function run(app: Application, operation: number) {
     job = { ...job, artifacts: [], narrative: undefined };
     schedule(1500);
   } else {
+    app.tailoring = undefined;
     app.artifacts = job.artifacts;
     app.documentJobId = job.id;
     app.posting = job.posting;

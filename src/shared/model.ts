@@ -473,7 +473,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-16-icims-country-relist-modifiers";
+export const CONTENT_VERSION = "2026-11-16-tailoring-progress-bars";
 export type Proposal = {
   fieldId: string;
   value: string;
@@ -595,6 +595,19 @@ export type Artifact = {
   education?: number;
   level?: "undergraduate" | "graduate";
 };
+// One document or written question a generation job is preparing, and how far
+// it has really got: `done` of `total` steps ended (never a timed estimate).
+export type TailoringItem = {
+  id: string;
+  name: string;
+  kind: "document" | "question";
+  state: "waiting" | "running" | "done" | "failed";
+  done: number;
+  total: number;
+  // The step in progress (running) or next (waiting).
+  step?: string;
+  error?: string;
+};
 export type GenerationJob = {
   id: string;
   purpose?: "application" | "fit" | "answers" | "field-fallback";
@@ -611,6 +624,8 @@ export type GenerationJob = {
   fieldDrafts?: FieldFallbackDraft[];
   warnings?: string[];
   fit?: JobFit;
+  // What it is preparing, item by item, while it runs (and as it ended).
+  progress?: TailoringItem[];
   // The job posting the documents were tailored from, when it was found.
   posting?: { source: string; title: string; location?: string };
   postingKey?: string;
@@ -802,6 +817,8 @@ export type Application = {
   profileRevision: number;
   jobId?: string;
   documentJobId?: string;
+  // The documents and questions the job is preparing, from its progress.
+  tailoring?: TailoringItem[];
   artifacts: Artifact[];
   narrative?: Narrative;
   missing: string[];

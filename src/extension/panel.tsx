@@ -24,6 +24,7 @@ import { ATTACHMENT_LIMIT, issueSummary, newIssueLink, replacedSummary, sharedFi
 import {
   emptyProfile,
   type Application,
+  type TailoringItem,
   type Artifact,
   type Profile,
   type QueueState,
@@ -142,6 +143,46 @@ const legalDetailHints: Record<LegalDetailKey, string> = {
   other: "Anything else an application may ask about your eligibility",
 };
 // What a fill is writing right now, and what it has worked on so far.
+// One bar per document and written question being prepared. A bar moves only
+// when the server reports a step ended; a step in progress with nothing
+// finished yet is an indeterminate bar.
+function tailoringText(item: TailoringItem) {
+  if (item.state === "done") return "Done";
+  if (item.state === "failed") return item.error ? `Failed: ${item.error}` : "Failed";
+  const count = item.total > 1 ? ` (${item.done} of ${item.total})` : "";
+  if (item.state === "waiting") return item.done ? `Next: ${item.step || "waiting"}${count}` : "Waiting";
+  return `${item.step || "Working"}…${count}`;
+}
+function TailoringBars({ app }: { app: { status: string; draftJobId?: string; tailoring?: TailoringItem[] } }) {
+  const items = app.tailoring;
+  if (!items?.length || (app.status !== "preparing" && !app.draftJobId)) return null;
+  return (
+    <ul className="tailoring-bars" aria-label="Tailoring progress">
+      {items.map((item) => {
+        const indeterminate = item.state === "running" && item.done === 0;
+        return (
+          <li className={`tailoring-bar is-${item.state}`} key={item.id}>
+            <div className="tailoring-bar-head">
+              <strong>{item.name}</strong>
+              <small>{tailoringText(item)}</small>
+            </div>
+            <div
+              className={`tailoring-track${indeterminate ? " is-indeterminate" : ""}`}
+              role="progressbar"
+              aria-label={`${item.name}: ${tailoringText(item)}`}
+              aria-valuemin={0}
+              aria-valuemax={item.total}
+              aria-valuenow={indeterminate ? undefined : item.done}
+              aria-valuetext={tailoringText(item)}
+            >
+              <span style={indeterminate ? undefined : { width: `${(item.done / item.total) * 100}%` }} />
+            </div>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 function FillProgress({ app }: { app: { progress?: { current?: string; answered: string[] } } }) {
   const progress = app.progress;
   if (!progress || (!progress.current && !progress.answered.length)) return null;
@@ -1382,6 +1423,7 @@ function App() {
                       </small>
                       {(active.includes(linkedApplication.status) || suggesting(linkedApplication)) && <FillLane />}
                       <FillProgress app={linkedApplication} />
+                      <TailoringBars app={linkedApplication} />
                       {suggesting(linkedApplication) && (
                         <p className="app-note">AI is suggesting values for the fields left open. You can carry on in the form: your own answers are kept.</p>
                       )}
@@ -1973,6 +2015,7 @@ function App() {
                         ) : (
                           <FillLane />
                         ))}
+                      <TailoringBars app={app} />
                       <AppIssues app={app} />
                       <JobFitAssessment app={app} profileRevision={profile.revision} onCheck={checkFit} disabled={busy} prerequisite={!connected ? "Connect the backend to check fit." : !profile.confirmed ? "Confirm your profile to check fit." : ""} />
                       {postingMissing(app) && <PostingPrompt app={app} onSave={savePosting} />}

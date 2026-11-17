@@ -20883,3 +20883,44 @@ test("profile facts fill age and education locally without asking AI", async () 
   expect(saved.jobs.filter((job: { purpose?: string }) => job.purpose === "field-fallback" || job.purpose === "answers")).toEqual([]);
   expect(await page.evaluate(() => (window as any).submissions)).toBe(0);
 });
+
+test("while documents are tailoring, the panel shows a progress bar for each document and question, and they go when it is done", async () => {
+  let release!: () => void;
+  const held = new Promise<void>((resolve) => (release = resolve));
+  runtimeGenerate = async (req, p) => {
+    await held;
+    return groundNarrative(
+      {
+        resume: p.facts.map((f) => ({ factId: f.id, text: f.text })),
+        coverLetter: [{ text: "", factIds: ["fact-1"] }],
+        answers: req.fields.filter((f) => /describe/i.test(f.label)).map((f) => ({ fieldId: f.id, value: "", factIds: ["fact-1"] })),
+      },
+      p,
+      req,
+    );
+  };
+  const page = await context.newPage();
+  await page.goto(`${origin}/tailoring-bars`);
+  await enqueue([page]);
+  await expect.poll(async () => (await state()).applications[0]?.status, { timeout: 30000 }).toBe("preparing");
+  // The background passes the job's items on: the resume and letter, and the
+  // question being drafted.
+  await expect
+    .poll(async () => ((await state()).applications[0].tailoring || []).map((item) => item.name), { timeout: 30000 })
+    .toEqual(["Tailored resume", "Cover letter", "Describe your experience"]);
+  await panel.bringToFront();
+  // On the application's row (the current-tab card shows the same bars).
+  const card = panel.getByRole("list", { name: "Tailoring progress" });
+  const bars = card.getByRole("progressbar");
+  await expect(bars).toHaveCount(3);
+  // Held in the draft: the letter and the question are working (no fraction
+  // known), the resume is waiting with none of its steps done.
+  await expect(card.getByRole("progressbar", { name: /^Cover letter: Writing/ })).not.toHaveAttribute("aria-valuenow", /.*/);
+  await expect(card.getByRole("progressbar", { name: /^Describe your experience: Drafting/ })).not.toHaveAttribute("aria-valuenow", /.*/);
+  await expect(card.getByRole("progressbar", { name: /^Tailored resume: Waiting/ })).toHaveAttribute("aria-valuenow", "0");
+  await expect(card.getByRole("progressbar", { name: /^Tailored resume/ })).toHaveAttribute("aria-valuemax", "1");
+  // Released: the steps end, and the bars go with the tailoring.
+  release();
+  await expect(bars).toHaveCount(0, { timeout: 30000 });
+  expect((await state()).applications[0].tailoring).toBeUndefined();
+});
