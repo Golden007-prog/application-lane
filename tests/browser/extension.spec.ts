@@ -1518,6 +1518,112 @@ test("a Workday Professional Experience section adds and fills each job", async 
   await expect(schools.nth(1)).toHaveValue("Contoso University", { timeout: 30_000 });
 });
 
+test("a Workday job row ticks \"I currently work here\" only for the job held now and leaves it from the model", async () => {
+  const workdayOrigin = atsOrigins[0];
+  // Whatever the model is asked on the page; it writes No over every box.
+  const asked: string[] = [];
+  const providerServer = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const input = JSON.parse(JSON.parse(Buffer.concat(chunks).toString()).messages[1].content);
+    const suggestions = (input.fields || []).map((candidate: { id: string; label: string }) => {
+      asked.push(candidate.label);
+      return { fieldId: candidate.id, value: "No", sourceIds: ["education.1"] };
+    });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ suggestions }) } }] }));
+  });
+  providerServer.listen(0, "127.0.0.1");
+  await once(providerServer, "listening");
+  appConfig.endpoint = `http://127.0.0.1:${(providerServer.address() as { port: number }).port}/v1`;
+  await ui({ type: "SETTINGS", settings: { concurrency: 4, generationConcurrency: 2, modelFill: "auto" } });
+  const work = [
+    { organization: "Acme", title: "Software Engineer", location: "Phoenix, AZ", details: "Built TypeScript services.", startDate: "2025-05", endDate: "" },
+    { organization: "Contoso", title: "Research Assistant", location: "State College, PA", details: "Ran experiments.", startDate: "2024-01", endDate: "2024-12" },
+  ];
+  const education = [
+    { organization: "Penn State", title: "Master of Science", fieldOfStudy: "Data Science", startDate: "2025-08", endDate: "2027-05", location: "State College, PA", details: "" },
+    { organization: "Contoso University", title: "Bachelor of Science", fieldOfStudy: "Computer Science", startDate: "2021-08", endDate: "2025-05", location: "Phoenix, AZ", details: "" },
+  ];
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, work, education } });
+  await context.route(`${workdayOrigin}/**`, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><main><div data-automation-id="applyFlowMyExpPage">
+        <div role="group" aria-labelledby="Professional-Experience-section" id="work">
+          <h4 id="Professional-Experience-section">Professional Experience</h4>
+          <div data-automation-id="instructionalText"><p><span>Enter your most recent/relevant work experience.</span></p></div>
+          <div class="add"><div><button data-automation-id="add-button">Add</button></div></div>
+        </div>
+        <div role="group" aria-labelledby="Education-(Required)-section" id="education">
+          <h4 id="Education-(Required)-section">Education (Required)</h4>
+          <div role="group" aria-labelledby="Education-(Required)-1-panel">
+            <div><h5 id="Education-(Required)-1-panel">Education (Required) 1</h5></div>
+            <div data-fkit-id="education-4--null">
+              <div data-automation-id="formField-schoolName" data-fkit-id="education-4--schoolName">
+                <label for="education-4--schoolName"><span>School or University<abbr aria-hidden="true">*</abbr></span></label>
+                <div><input type="text" id="education-4--schoolName" name="schoolName" aria-required="true"></div>
+              </div>
+            </div>
+          </div>
+          <div class="add"><div><button data-automation-id="add-button">Add Another</button></div></div>
+        </div>
+      </div></main><script>
+        let next = 47;
+        const field = (row, name, label, control) =>
+          '<div data-automation-id="formField-' + name + '" data-fkit-id="' + row + '--' + name + '"><label for="' + row + '--' + name + '">' + label + '</label><div>' + control + '</div></div>';
+        const date = (row, name, label) =>
+          '<div data-automation-id="formField-' + name + '" data-fkit-id="' + row + '--' + name + '"><fieldset><legend><label>' + label + '</label></legend><div id="' + row + '--' + name + '" role="group" data-automation-id="dateInputWrapper">' +
+          '<input role="spinbutton" aria-label="Month" id="' + row + '--' + name + '-dateSectionMonth-input" data-automation-id="dateSectionMonth-input">' +
+          '<input role="spinbutton" aria-label="Year" id="' + row + '--' + name + '-dateSectionYear-input" data-automation-id="dateSectionYear-input"></div></fieldset></div>';
+        const add = (section, title, fields) => {
+          const number = section.querySelectorAll(':scope > [role="group"]').length + 1;
+          const row = (section.id === 'work' ? 'workExperience-' : 'education-') + next++;
+          const panel = document.createElement('div');
+          panel.setAttribute('role', 'group');
+          panel.setAttribute('aria-labelledby', title + '-' + number + '-panel');
+          panel.innerHTML = '<div><h5 id="' + title + '-' + number + '-panel">' + title.replaceAll('-', ' ') + ' ' + number + '</h5><button>Delete</button></div><div data-fkit-id="' + row + '--null">' + fields(row) + '</div>';
+          section.insertBefore(panel, section.querySelector('.add'));
+          section.querySelector('[data-automation-id="add-button"]').textContent = 'Add Another';
+        };
+        document.querySelector('#work [data-automation-id="add-button"]').addEventListener('click', () =>
+          add(document.querySelector('#work'), 'Professional-Experience', (row) =>
+            field(row, 'jobTitle', 'Job Title', '<input type="text" id="' + row + '--jobTitle" name="jobTitle">') +
+            field(row, 'companyName', 'Company', '<input type="text" id="' + row + '--companyName" name="companyName">') +
+            field(row, 'location', 'Location', '<input type="text" id="' + row + '--location" name="location">') +
+            field(row, 'currentlyWorkHere', 'I currently work here', '<input type="checkbox" id="' + row + '--currentlyWorkHere" name="currentlyWorkHere">') +
+            date(row, 'startDate', 'From') + date(row, 'endDate', 'To') +
+            field(row, 'roleDescription', 'Role Description', '<textarea id="' + row + '--roleDescription"></textarea>')));
+        document.querySelector('#education [data-automation-id="add-button"]').addEventListener('click', () =>
+          add(document.querySelector('#education'), 'Education-(Required)', (row) =>
+            field(row, 'schoolName', 'School or University', '<input type="text" id="' + row + '--schoolName" name="schoolName">')));
+      </script>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(`${workdayOrigin}/en-US/acme/job/professional-experience`);
+  await panel.bringToFront();
+  await background(page);
+  await enqueue([page]);
+  const jobs = page.locator('#work > [role="group"]');
+  await expect(jobs).toHaveCount(2, { timeout: 30_000 });
+  await expect(jobs.nth(0).locator('input[name="jobTitle"]')).toHaveValue("Software Engineer", { timeout: 30_000 });
+  await expect(jobs.nth(0).locator('input[name="companyName"]')).toHaveValue("Acme");
+  await expect(jobs.nth(1).locator('input[name="jobTitle"]')).toHaveValue("Research Assistant", { timeout: 30_000 });
+  await expect(jobs.nth(1).locator('input[name="companyName"]')).toHaveValue("Contoso");
+  const jobsChecked = jobs.locator('input[name="currentlyWorkHere"]');
+  await expect(jobsChecked.nth(0)).toBeChecked({ timeout: 30_000 });
+  await expect(jobs.nth(1).locator('input[name="companyName"]')).toHaveValue("Contoso");
+  await expect.poll(async () => (await state()).applications[0]?.status, { timeout: 40_000 }).toMatch(/ready|awaiting-user|paused/);
+  await page.waitForTimeout(2000);
+  await expect(jobsChecked.nth(1)).not.toBeChecked();
+  await expect(jobs.nth(1).locator('[data-automation-id="dateSectionYear-input"]').nth(1)).toHaveValue("2024");
+  await expect(jobs.nth(0).locator('[data-automation-id="dateSectionYear-input"]').nth(1)).toHaveValue("");
+  // The box is the profile's, row by row: never put to the model.
+  expect(asked).not.toContain("I currently work here");
+  await new Promise<void>((resolve) => providerServer.close(() => resolve()));
+});
+
 test("the captured Workday Resume/CV input receives the generated resume", async () => {
   const workdayOrigin = atsOrigins[0];
   await context.route(`${workdayOrigin}/**`, (route) =>

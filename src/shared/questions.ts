@@ -76,6 +76,11 @@ export function structuredFallbackField(field: Field, legalToo = false): boolean
   // empty (an end date for a job still held) stays empty. The model, told
   // only "End Date" under "Previous employment", gave a current job another
   // job's end date (SuccessFactors).
+  // A job's "I currently work here" and a school's "Still Student?" are the
+  // profile's, row by row: ticked for the row held now, left unticked for one
+  // that ended. A box left unticked reads as unanswered, and the model wrote
+  // No over it (Workday, Paylocity, Ashby).
+  if (rowCurrentBox(field)) return false;
   // Only an entry's own short date label in a section that names it:
   // Workday titles each question's section with the question itself, and
   // one employer's "Do you now, or did you … in the past 24 months, serve as an
@@ -164,4 +169,13 @@ export function leftReason(label: string): string | undefined {
   if (/\b(future positions|willing to travel|how often .*travel|preferred|preference|select one of the following options)\b/.test(text))
     return "A preference your profile does not record. Save an answer once in your profile, and every application will use it.";
   return undefined;
+}
+
+// The box a job or school row asks whether it is still held: Workday's "I
+// currently work here", Paylocity's "Currently Working Here", Ashby's "Still
+// Student?" (named by its id where its label is lost).
+export function rowCurrentBox(field: Pick<Field, "label" | "kind">): boolean {
+  if (field.kind !== "checkbox" && field.kind !== "radio" && field.kind !== "select") return false;
+  const label = field.label.trim().toLowerCase().replace(/[^a-z_\- ]+/g, " ").replace(/\s+/g, " ").trim();
+  return /^(i )?(currently work(ing)? (here|in this role)|am currently working (here|in this role)|currently (studying|enrolled)( here)?|still (a )?student)$|^_systemfield_(education|work)_history-iscurrent$/.test(label);
 }

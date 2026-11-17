@@ -49,3 +49,15 @@ test("a long question whose own text is its section is not taken for an entry's 
   // An entry's own date is still kept out.
   assert.equal(structuredFallbackField(field("End Date", { section: "Previous employment", index: 1 })), false);
 });
+
+// A job's "I currently work here" box (Workday), "Currently Working Here"
+// (Paylocity) and a school's "Still Student?" (Ashby) are the profile's, row by
+// row; the model wrote No over the unticked ones.
+test("a row's current-work box is never left to the model", () => {
+  const box = (label: string, section: string, index = 0) => field(label, { kind: "checkbox", section, index });
+  assert.equal(structuredFallbackField(box("I currently work here", "Work or Other Experience", 2)), false);
+  assert.equal(structuredFallbackField(box("Currently Working Here", "Work History", 2)), false);
+  assert.equal(structuredFallbackField(box("_systemfield_education_history-isCurrent", "Education", 1)), false);
+  assert.equal(structuredFallbackField(box("Still Student?", "Education", 1)), false);
+  assert.equal(structuredFallbackField(box("Remote position", "Work History")), true);
+});
