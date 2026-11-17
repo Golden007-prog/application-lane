@@ -32,6 +32,8 @@ type ConfigView = {
   model: string;
   verifyModel: string;
   hasApiKey: boolean;
+  // "unavailable": checking is on, but no second model can do it.
+  secondCheck?: "on" | "off" | "unavailable";
   documentsDir: string;
   transcriptsDir: string;
   transcript?: { name: string; modifiedAt: number } | null;
@@ -205,6 +207,14 @@ export function DraftingSettings({ connected }: { connected: boolean }) {
           the draft. A smaller model checks as well as a large one. Empty: the
           Drafting order checks, then the checking model below.
         </p>
+        {view.secondCheck === "unavailable" && (
+          <p className="fill-blocker" role="status">
+            Nothing checks your drafts now: the Drafting order has one model,
+            and a model cannot check what it wrote. Add a checker here, or a
+            second provider to the Drafting order, and the next drafts are
+            checked. Until then, read each answer and letter before submitting.
+          </p>
+        )}
         <ProviderList {...lists} steps={checks} setSteps={setChecks} empty="The Drafting order checks." label="Checker" />
       </section>
       <section className="card" aria-label="API endpoint">

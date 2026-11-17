@@ -46,7 +46,7 @@ Local files are not encrypted at rest. The extension's own state (tracked applic
 | `extensionId` | The extension this backend is paired with. Remove it (backend stopped) to pair a different extension, or use `npm start -- --pair`. |
 | `draftProviders` | Ordered list of drafting providers (see below). |
 | `checkProviders` | Ordered list of providers that check drafted claims, skipping the one that wrote the draft. Empty: the Drafting order, then `verifyModel`. |
-| `checking` | `"thorough"` (default: another model checks every claim, about half a minute more per application) or `"fast"` (no check). |
+| `checking` | `"thorough"` (default: another model checks every claim, about half a minute more per application) or `"fast"` (no check). It needs a second model: a second Drafting provider, a `checkProviders` entry, or `verifyModel`. With only one, nothing checks them, and **Settings → Drafting → Checking** says so. |
 | `verifyModel` | The API endpoint model used for checking when no other checker is available. |
 | `endpoint`, `model`, `apiKey` | The OpenAI-compatible API endpoint, model and key. `LANE_API_KEY` is read by `npm run setup`. HTTPS is required for remote endpoints; plain HTTP is allowed for loopback. |
 | `generationConcurrency` | AI requests at once, 1–4 (default 2). |

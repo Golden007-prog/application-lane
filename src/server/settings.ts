@@ -7,6 +7,7 @@ import { launch } from "./command";
 import { newestTranscript, transcriptsFolder } from "./documents";
 import { draftProviderChain } from "./generation";
 import { atomicJSON, configSchema, draftProviderSchema, type Config } from "./store";
+import { secondCheckAvailable } from "./verify";
 
 // The part of config.json the dashboard's Settings page reads and edits:
 // who drafts (Claude Code, Codex, an API endpoint) in what order, and where
@@ -95,6 +96,9 @@ export async function configView(config: Config, directory: string) {
     model: config.model,
     verifyModel: config.verifyModel,
     hasApiKey: Boolean(config.apiKey),
+    // Whether a second model will check the drafts: with one model and no
+    // checker, nothing does, and the Checking card says so.
+    secondCheck: config.checking === "fast" ? "off" : secondCheckAvailable(config) ? "on" : "unavailable",
     documentsDir: config.documentsDir || "",
     transcriptsDir: config.transcriptsDir || "",
     // The file a form's transcript field would be given, if there is one.

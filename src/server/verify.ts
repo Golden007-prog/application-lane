@@ -415,10 +415,15 @@ async function slot<T>(work: () => Promise<T>): Promise<T> {
   }
 }
 
+// Whether a model other than the one that drafts can check the drafts: a
+// Checking order, or a second model in the Drafting order (or verifyModel).
+// One model alone cannot check what it wrote.
+export function secondCheckAvailable(config: Config): boolean {
+  return Boolean(config.checkProviders?.length) || checkers(config).length >= 2;
+}
+
 export function verifier(config: Config): Verifier | undefined {
-  // One model alone cannot check what it wrote; a Checking order is there
-  // to check.
-  if (!config.checkProviders?.length && checkers(config).length < 2) return;
+  if (!secondCheckAvailable(config)) return;
   return async (drafts, evidence, signal, deadline = signal) => {
     const entries = evidenceEntries(evidence.profile);
     const posting = evidence.posting.slice(0, 8000);

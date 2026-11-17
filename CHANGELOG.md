@@ -4,6 +4,8 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 ## Unreleased
 
+- **Settings → Drafting → Checking** now says when nothing checks your drafts: with one Drafting provider and no checker, no second model can check them. A checker or provider added in Settings checks the next drafts without restarting the backend, as Settings promises.
+
 - Security and privacy: Find jobs' site check and the posting reader open only public pages, by name and by every address the name resolves to, and check every redirect the same way, so a listing cannot have the backend open a page on your computer or your network. Written answers no longer send what you chose in sensitive fields (gender, disability, authorization and similar) to the drafting provider. PRIVACY.md now lists exactly what each kind of draft sends.
 
 - Security and privacy: a tailored résumé's summary and skills are written as text only, so a posting cannot slip a LaTeX command (such as reading a local file) into the résumé, and pdflatex runs with shell escape off and file access limited to its build folder. Network capture for reports no longer keeps passwords, one-time codes, tokens or session keys from requests, addresses or JSON replies. **Delete local application data** now also removes report screenshots, the fixer's list of repairs, the imported tailoring folder and your leak-check terms.

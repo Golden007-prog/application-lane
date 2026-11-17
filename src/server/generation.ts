@@ -1544,9 +1544,10 @@ export class GenerationQueue {
       urls,
       signal,
     ) => (config.postingLookup ? fetchPosting(urls, { signal }) : Promise.resolve(undefined)),
-    // A second model's reading of the drafts (verify.ts); none when no model
-    // other than the drafter is configured.
-    private verify: Verifier | undefined = verifier(config),
+    // A second model's reading of the drafts (verify.ts). Unset: whatever
+    // the settings provide when the drafts are checked, so a checker added
+    // in Settings works from the next draft, without a restart.
+    private verify?: Verifier,
     // A posting page the applicant linked that no ATS endpoint covers.
     private readPostingPage: (url: string, signal: AbortSignal) => Promise<Posting | undefined> = (url, signal) =>
       fetchPostingPage(url, { signal }),
@@ -1730,7 +1731,8 @@ export class GenerationQueue {
   ): Promise<{ narrative?: Narrative; written?: WrittenAnswers; warnings: string[] }> {
     const { narrative, plan, written } = drafts;
     const warnings: string[] = [];
-    if (!this.verify || this.config.checking === "fast") return { narrative, written, warnings };
+    if (this.config.checking === "fast") return { narrative, written, warnings };
+    const verify = this.verify ?? verifier(this.config);
     const asked = (fieldId: string) => request.fields.find((field) => field.id === fieldId)?.label;
     const label = (fieldId: string) => shortLabel(asked(fieldId) || "a question");
     const items: Draft[] = [
@@ -1755,6 +1757,10 @@ export class GenerationQueue {
         ? [{ id: "summary", kind: "summary" as const, draftedWith: plan.draftedWith, text: plan.brief.summary_line }]
         : []),
     ];
+    // No model but the one that wrote them. Not repeated on every
+    // application: Settings → Drafting → Checking says so while it lasts
+    // (secondCheckAvailable, verify.ts).
+    if (!verify) return { narrative, written, warnings };
     const independent = items.filter((item) => checkers(this.config, item.draftedWith).length);
     if (independent.length < items.length) warnings.push("No other model in your Drafting order could check some drafts, so they need your review without a second model check.");
     items.splice(0, items.length, ...independent);
@@ -1773,7 +1779,7 @@ export class GenerationQueue {
       // time job(s) are you applying for?" lost its own answer, the job's
       // title, as found nowhere in the profile.
       const posting = [request.title ? `Job title: ${request.title}` : "", request.description].filter(Boolean).join("\n");
-      verdicts = await this.verify(items, { profile: profileText, posting }, signal, this.checkingDeadline(signal));
+      verdicts = await verify(items, { profile: profileText, posting }, signal, this.checkingDeadline(signal));
     } catch (error) {
       signal.throwIfAborted();
       warnings.push(

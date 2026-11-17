@@ -24,7 +24,7 @@ import {
 } from "../src/server/field-fallback";
 import { structuredFallbackField } from "../src/shared/questions";
 import { CHECKING_BUDGET_MS, GenerationQueue, postingReadable, unsupportedClaims, wantsLetter } from "../src/server/generation";
-import { evidenceEntries, heldByOneEntry, supportedBy, talksAboutSources, unclaimed, checkers, verifier, type Draft, type Verdict } from "../src/server/verify";
+import { evidenceEntries, heldByOneEntry, supportedBy, talksAboutSources, unclaimed, checkers, verifier, secondCheckAvailable, type Draft, type Verdict } from "../src/server/verify";
 import { configSchema, Store } from "../src/server/store";
 
 const field = (label: string, overrides: Partial<Field> = {}): Field => ({
@@ -1615,6 +1615,40 @@ test("answers-only jobs do not generate documents or assess fit, and do not veri
   assert.equal(job.answerDrafts![0].source, "Student web application");
   assert.equal(verified, false);
   assert.match(job.warnings!.join(" "), /without a second model check/);
+});
+
+test("with one model nothing checks the drafts, and a checker added in Settings checks the next ones without a restart", async () => {
+  const store = new Store(await mkdtemp(join(tmpdir(), "lane-unchecked-")));
+  await store.init(); store.data.profile = structuredClone(profile);
+  // One model in the Drafting order, no checker: the backend's own settings,
+  // as Settings saves them (the queue holds this object).
+  const config = configSchema.parse({ token: "test-token-".repeat(5), postingLookup: false, endpoint: "http://127.0.0.1:1/v1",
+    draftProviders: [{ id: "drafter", provider: "http", model: "gemma" }] });
+  const queue = new GenerationQueue(store, config,
+    async () => { throw new Error("document generator must not run"); },
+    async () => { throw new Error("tailoring must not run"); },
+    async () => ({ answers: [{ fieldId: "technical", value: profile.facts[0].text, factIds: [] }], warnings: [], withheld: [], sources: {}, providers: { technical: { provider: "http", model: "gemma" } } }),
+    async () => undefined,
+    undefined,
+    undefined,
+    async () => { throw new Error("fit must not run"); },
+  );
+  const answer = async () => {
+    const job = await queue.enqueue({ ...request([field(technicalQuestion, { id: "technical" })]), purpose: "answers", questionIds: ["technical"] });
+    const deadline = Date.now() + 10_000;
+    while (["queued", "running"].includes(job.status)) { assert.ok(Date.now() < deadline); await new Promise((r) => setTimeout(r, 10)); }
+    assert.equal(job.status, "complete", job.error);
+    return (job.warnings || []).join(" ");
+  };
+  // Nothing to check with: no check is tried, and the Checking card in
+  // Settings says so (not each application).
+  assert.equal(secondCheckAvailable(config), false);
+  assert.doesNotMatch(await answer(), /could not check/);
+  // A second model, added as Settings adds it. Its endpoint is not
+  // listening, so its check fails: what matters is that it was tried.
+  config.draftProviders.push({ id: "checker", provider: "http", model: "other" });
+  assert.equal(secondCheckAvailable(config), true);
+  assert.match(await answer(), /could not check/);
 });
 
 test("cancelled and superseded answer jobs never complete a usable review", async () => {
