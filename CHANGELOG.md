@@ -4,6 +4,9 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 ## Unreleased
 
+- Every click a fill makes now passes one check that refuses Submit, Next, Continue and signing controls, including real clicks and Enter presses sent through the debugger.
+- **Your profile → Signatures** decides what a fill signs: nothing (the new default), self-identification forms, or every form. Before this, Lever's and Workday's self-identification signatures and Tesla's legal acknowledgment were filled without asking; turn the setting on to keep that.
+
 ## 0.1.0 — initial public release
 
 ### Filling applications

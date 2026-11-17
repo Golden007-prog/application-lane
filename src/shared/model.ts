@@ -125,6 +125,9 @@ export const hasLegalDetails = (profile: { legal?: Partial<Record<LegalDetailKey
   Object.values(profile.legal || {}).some((text) => Boolean(text?.trim()));
 // Work authorization in one country. "authorized" is an older profile's
 // plain Yes, which did not say on what basis.
+export const signaturePolicySchema = z.enum(["never", "self-id", "all"]);
+export type SignaturePolicy = z.infer<typeof signaturePolicySchema>;
+
 export const workAuthorizationStatuses = ["citizen", "permanent-resident", "visa", "authorized", "none"] as const;
 export const workAuthorizationSchema = z.object({
   country: z.string().min(1).max(60),
@@ -337,6 +340,10 @@ const profileObject = z.object({
   schemaVersion: z.number().int().optional(),
   legal: legalDetailsSchema,
   acknowledgeTerms: z.boolean().default(false),
+  // What a fill may sign for the applicant (src/engine/page/signatures.ts):
+  // nothing, the name and date on voluntary self-identification forms, or
+  // every signature and attestation. Left to the applicant by default.
+  signatures: signaturePolicySchema.default("never"),
   facts: z.array(factSchema).max(300),
   work: z.array(historySchema).max(30).default([]),
   education: z.array(historySchema).max(30).default([]),
@@ -473,7 +480,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-17-row-current-box-rules-only";
+export const CONTENT_VERSION = "2026-11-17-click-gate-signatures";
 export type Proposal = {
   fieldId: string;
   value: string;

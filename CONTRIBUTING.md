@@ -48,7 +48,7 @@ npx playwright test tests/browser/extension.spec.ts -g "<pattern>"
 - Format with Prettier (`npx prettier --write <files>`). Match the style of the surrounding code.
 - Comments explain *why*, in plain sentences.
 - Add or update a test with every behavior change. Site-rule changes need a fixture-based test.
-- User-facing text is plain and friendly. The extension must never submit, click Next or overwrite a user's edit; changes that weaken these guarantees will not be accepted.
+- User-facing text is plain and friendly. The extension must never submit, click Next or overwrite a user's edit on its own, and must never sign or tick a consent box the applicant's settings do not allow. Every click goes through `src/engine/page/click-gate.ts`; changes that weaken these guarantees will not be accepted.
 
 ## Never commit personal data
 

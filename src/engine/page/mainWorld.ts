@@ -49,8 +49,22 @@ export function applyMainWorld(
     return fail("The guarded field marker was missing or ambiguous.");
   const element = matches[0] as HTMLElement;
   element.removeAttribute(marker);
-  const prohibited =
-    /\b(submit|send|finish|sign|agree|certify|certification)\b|\bcomplete application\b/i;
+  // The same controls click-gate.ts refuses (this function cannot import
+  // it; tests/click-gate.test.ts checks the copies agree): submitting,
+  // signing, and a short "Next" / "Continue" that moves to another step.
+  const submitPattern =
+    /\b(submit|send|finish)\b|\bcomplete (?:my |your |the )?application\b|\bapply (?:now|for (?:this )?(?:job|position|role))\b/i;
+  const signaturePattern =
+    /\b(sign|e-?sign|agree|attest|certify|certification)\b/i;
+  const navigationPattern =
+    /\b(next|continue|proceed)\b(?!\s+(?:month|year|week|day|decade|page|image|photo|slide|results?|options?|items?|entr(?:y|ies))\b)|\bsave (?:and|&) (?:continue|next|proceed)\b|\breview (?:and submit|(?:my |your |the )?application)\b/i;
+  const prohibited = {
+    test: (raw: string) => {
+      const label = raw.replace(/\s+/g, " ").trim();
+      return submitPattern.test(label) || signaturePattern.test(label) ||
+        (label.length <= 30 && navigationPattern.test(label));
+    },
+  };
   const clicks =
     ["click", "reactClick"].includes(request.method) ||
     request.event === "click";
@@ -73,10 +87,10 @@ export function applyMainWorld(
         node.form) ||
       node.matches('input[type="submit"],input[type="image"]') ||
       (clicks &&
-        node.matches('button,a,[role="button"]') &&
+        node.matches('button,a,[role="button"],[role="link"],input[type="button"]') &&
         prohibited.test(label))
     )
-      return fail("Refused to activate a submit or certification control.");
+      return fail("Refused to activate a submit, navigation or certification control.");
   }
   const supported = new Set([
     "event",

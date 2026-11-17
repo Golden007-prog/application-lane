@@ -123,7 +123,7 @@ After **Fill this step**, **Unfilled structured fields** lists empty fields your
 - *Review first*: fills only what the rules match and leaves drafts in the panel for approval.
 - *Profile only*: never calls the model during a fill.
 
-**Legal and eligibility questions** (a conviction, a clearance, a relative at the company) are left for you unless **Your profile → Legal and eligibility details** answers them. Signatures, initials, consent boxes and the final Submit are always yours.
+**Legal and eligibility questions** (a conviction, a clearance, a relative at the company) are left for you unless **Your profile → Legal and eligibility details** answers them. The final Submit is always yours. Signatures and consent boxes are yours too unless you allow them under **Your profile**: **Signatures** can sign the name and date on self-identification forms (disability, veteran) or every form including attestations, and a separate box lets terms, privacy and certification boxes be ticked. A signature typed for you is a legal signature; check the form before you submit it.
 
 ## What happens when you edit
 

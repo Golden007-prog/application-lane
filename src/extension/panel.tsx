@@ -2796,9 +2796,32 @@ function App() {
                         edit("acknowledgeTerms", e.target.checked)
                       }
                     />{" "}
-                    Allow the extension to tick Terms and Conditions
-                    acknowledgements (signatures and final Submit remain manual).
+                    Allow the extension to tick boxes that agree to terms, a
+                    privacy notice or a certification (the final Submit
+                    remains yours).
                   </label>
+                  <label>
+                    Signatures
+                    <select
+                      value={profile.signatures || "never"}
+                      onChange={(e) =>
+                        edit("signatures", e.target.value as Profile["signatures"])
+                      }
+                    >
+                      <option value="never">Leave every signature for me</option>
+                      <option value="self-id">
+                        Sign self-identification forms (disability, veteran)
+                      </option>
+                      <option value="all">
+                        Sign every form, including attestations
+                      </option>
+                    </select>
+                  </label>
+                  <p className="help">
+                    Signing types your full name into a signature box and
+                    dates it today. It is a legal signature, made for you;
+                    check the form before you submit it.
+                  </p>
                 </section>
                 <section className="card">
                   <h2>U.S. equal-opportunity questions (optional)</h2>

@@ -1,4 +1,5 @@
 import type { MainWorldRequest, MainWorldResult } from "./mainWorld";
+import { clickPointAllowed, enterAllowed } from "./click-gate";
 
 export type MainWorldGuard = {
   applicationId: string;
@@ -97,7 +98,18 @@ export async function requestTrustedType(
   click?: { x: number; y: number },
   insert = false,
 ): Promise<MainWorldResult> {
-  return claimed(element, guard, signal, valid, async (token) => {
+  // A real click or Enter goes wherever the page has it land, so where it
+  // lands is checked as the background asks to send it (authorizeMainWorld),
+  // not only now: it must never press a submit, Next or signing control.
+  const presses = enter || (choose !== false && choose !== 0 && !hold);
+  if (presses && !enterAllowed(element)) throw new Error("Refused an Enter that could submit or move the form on.");
+  if (click && !clickPointAllowed(click, element.ownerDocument))
+    throw new Error("Refused a click that would land on a submit, Next or signing control.");
+  const checked = () =>
+    valid() &&
+    (!presses || enterAllowed(element)) &&
+    (!click || clickPointAllowed(click, element.ownerDocument));
+  return claimed(element, guard, signal, checked, async (token) => {
     const response = await chrome.runtime.sendMessage({
       type: "TRUSTED_TYPE",
       ...guard,

@@ -10,6 +10,7 @@ import {
   type FieldFallbackProblem,
   type Observation,
   type Profile,
+  type SignaturePolicy,
   type Proposal,
   type QueueState,
   type QueueSummaryItem,
@@ -509,6 +510,9 @@ async function api(path: string, method = "GET", body?: unknown): Promise<any> {
 const alive = (app: Application, operation: number) =>
   app.operation === operation &&
   !["paused", "cancelled", "failed"].includes(app.status);
+// What each application's fill may sign (Profile.signatures), as its last
+// fill read the profile.
+const signingPolicies = new Map<string, SignaturePolicy>();
 async function frameCall(
   app: Application,
   frameId: number,
@@ -516,7 +520,14 @@ async function frameCall(
 ) {
   if (!app.tabId) throw new Error("Application tab is closed.");
   const operation = app.operation;
-  const payload = { applicationId: app.id, operation, ...message };
+  // Writes carry what the applicant lets a fill sign, as this application's
+  // fill read it from the profile; unknown (after a restart), nothing.
+  const payload = {
+    applicationId: app.id,
+    operation,
+    ...(message.type === "APPLY" ? { signatures: signingPolicies.get(app.id) ?? "never" } : {}),
+    ...message,
+  };
   let result;
   try {
     result = await chrome.tabs.sendMessage(app.tabId, payload, { frameId });
@@ -2188,6 +2199,7 @@ async function run(app: Application, operation: number) {
   if (app.profileRevision && app.profileRevision !== profile.revision)
     throw new Error("Profile changed. Choose Fill this step with the updated profile.");
   app.profileRevision = profile.revision;
+  signingPolicies.set(app.id, profile.signatures ?? "never");
   const { frames, inaccessible, accessOrigins, frameUrls } = await observations(
     app,
     operation,

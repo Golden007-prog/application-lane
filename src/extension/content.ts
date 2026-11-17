@@ -7,6 +7,8 @@ import { pickMonth } from "../engine/page/month-picker";
 import { pickTdsDate, tdsDateBox } from "../engine/page/tds-date-picker";
 import { loadQuestionnaires, questionnaireUrls, type QuestionnaireAnswers } from "../engine/config/workday-questionnaire";
 import { adapterFor } from "./adapters";
+import { fillClick } from "../engine/page/click-gate";
+import { signatureField, signatureLeftReason, signingAllowed } from "../engine/page/signatures";
 import { redactURL, secretName } from "./workspace";
 import { DRAFT_ONLY_NOTE, draftOnlySite } from "../shared/matching";
 import { startRecorder } from "./recorder";
@@ -86,6 +88,7 @@ import {
   type Proposal,
   type Artifact,
   type Profile,
+  type SignaturePolicy,
 } from "../shared/model";
 
 // Chrome runs a hidden tab's chained timers about once a minute after five
@@ -201,6 +204,9 @@ type Command = {
   fieldIds?: string[];
   listButtonsOnly?: boolean;
   profile?: Profile;
+  // What the applicant lets a fill sign (Profile.signatures), on commands
+  // that write proposals without the whole profile.
+  signatures?: SignaturePolicy;
   token?: string;
   session?: string;
   startedAt?: number;
@@ -1901,11 +1907,11 @@ if (!window.__applicationLane) {
           openingRequested = true;
           const toggle = ashbyLocation ? undefined : ashbyToggle(element);
           // Ashby's dropdowns list their options only from their arrow.
-          if (toggle) toggle.click();
+          if (toggle) fillClick(toggle);
           // Clicked, then focused, as its site rule does: a click alone
           // marks it open and loads nothing.
           else if (successFactorsPicklist(element)) {
-            element.click();
+            fillClick(element);
             element.focus({ preventScroll: true });
           }
           // An iCIMS list opens on a mousedown; a click alone does nothing,
@@ -1918,7 +1924,7 @@ if (!window.__applicationLane) {
                 view: window,
               }),
             );
-          else element.click();
+          else fillClick(element);
           // The opening handler can focus asynchronously. The scoped focus
           // listener attributes that focus only while this command and field
           // remain unchanged and no trusted pointer/key/touch has occurred.
@@ -1935,7 +1941,7 @@ if (!window.__applicationLane) {
         writing = true;
         try {
           record.writePendingAt = performance.now();
-          element.click();
+          fillClick(element);
         } finally {
           writing = false;
         }
@@ -1961,7 +1967,7 @@ if (!window.__applicationLane) {
           writing = true;
           try {
             record.writePendingAt = performance.now();
-            arrow.click();
+            fillClick(arrow);
           } finally {
             writing = false;
           }
@@ -1991,7 +1997,7 @@ if (!window.__applicationLane) {
           writing = true;
           try {
             record.writePendingAt = performance.now();
-            target.click();
+            fillClick(target);
           } finally {
             writing = false;
           }
@@ -2333,7 +2339,7 @@ if (!window.__applicationLane) {
             writing = true;
             try {
               record.writePendingAt = performance.now();
-              (menuItem || option).click();
+              fillClick(menuItem || option);
               picked = true;
               // A SuccessFactors list still loading its next page when the
               // pick was made opens itself again once the page arrives (a
@@ -2477,7 +2483,7 @@ if (!window.__applicationLane) {
       if (arrow && openingRequested && !openingInterrupted && valid(command) && element.isConnected &&
           element.getAttribute("aria-expanded") === "true" && !(element as HTMLInputElement).value) {
         writing = true;
-        arrow.click();
+        fillClick(arrow);
         // The arrow hands focus to the input, sometimes a moment later.
         await pause(150);
         if (!openingInterrupted && document.activeElement === element) ownsFocus = true;
@@ -2504,7 +2510,7 @@ if (!window.__applicationLane) {
         }
         if (shownLists().length) {
           writing = true;
-          (document.querySelector<HTMLElement>('[data-automation-id="mainContent"]') || document.body).click();
+          fillClick(document.querySelector<HTMLElement>('[data-automation-id="mainContent"]') || document.body);
           await pause(150);
         }
       }
@@ -2554,7 +2560,7 @@ if (!window.__applicationLane) {
   async function checkControl(control: HTMLInputElement, checked: boolean): Promise<boolean> {
     if (control.checked === checked) return true;
     expectOwnedActivation(control, "click");
-    control.click();
+    fillClick(control);
     await pause(0);
     if (control.checked === checked) return true;
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, "checked")!.set!.call(control, checked);
@@ -2967,7 +2973,7 @@ if (!window.__applicationLane) {
     if (!safe()) throw new Error("Custom selection was superseded.");
     const before = new Map(siblings.map((sibling) => [sibling.record, valueOf(sibling.record.element)]));
     if (choice) {
-      choice.click();
+      fillClick(choice);
       for (let waited = 0; waited < 1_500 && listed().length; waited += 100) await pause(100);
       // The site fills the address's other parts from the suggestion.
       await pause(300);
@@ -3094,6 +3100,13 @@ if (!window.__applicationLane) {
         continue;
       }
       const element = record.element;
+      // A signature, or its date, only as the applicant's settings allow
+      // (signatures.ts).
+      const signs = signatureField(element);
+      if (signs && !signingAllowed(command.signatures, signs)) {
+        results.push({ id: proposal.fieldId, ok: false, reason: signatureLeftReason(signs) });
+        continue;
+      }
       let selectedLabel = proposal.value;
       let typedDate = false;
       const savesBefore = savesFinished;
@@ -3183,7 +3196,7 @@ if (!window.__applicationLane) {
             const native = associatedNativeChoice(selected, "radio");
             if (native) {
               if (!(await checkControl(native, true))) throw new Error("Site did not retain the native choice.");
-            } else selected.click();
+            } else fillClick(selected);
           }
           await pause(0);
         } else if (element.getAttribute("role") === "checkbox") {
@@ -3195,7 +3208,7 @@ if (!window.__applicationLane) {
           } else if ((element.getAttribute("aria-checked") === "true") !== wanted) {
             if (element instanceof HTMLButtonElement && element.type === "submit" && element.form)
               throw new Error("This choice is a submit button inside the form; select it manually.");
-            element.click();
+            fillClick(element);
           }
           await pause(0);
         } else if (isToggleChoice(element)) {
@@ -3207,7 +3220,7 @@ if (!window.__applicationLane) {
             throw new Error("This choice is a submit button inside the form; select it manually.");
           // A click is how the site's own handler records the choice; the
           // pressed state follows its re-render.
-          if (selected.getAttribute("aria-pressed") !== "true") selected.click();
+          if (selected.getAttribute("aria-pressed") !== "true") fillClick(selected);
           await pause(0);
         } else if (element instanceof HTMLSelectElement) {
           const option = pickOption(
@@ -3523,6 +3536,10 @@ if (!window.__applicationLane) {
         form.addEventListener("submit", hold, true);
         writing = true;
         try {
+          // The one submit input a fill presses, and so not through
+          // fillClick (click-gate.ts), which refuses every submit input:
+          // iCIMS' own "Remove Additional", only where the page says to
+          // remove the others, with the form's submission held above.
           remover.click();
         } finally {
           writing = false;
@@ -3547,7 +3564,7 @@ if (!window.__applicationLane) {
       })?.element;
       writing = true;
       try {
-        control.click();
+        fillClick(control);
       } finally {
         writing = false;
       }
@@ -3846,7 +3863,7 @@ if (!window.__applicationLane) {
         if (!folded.length) break;
         writing = true;
         try {
-          for (const bar of folded) if (bar.isConnected && bar.getAttribute("aria-expanded") === "false") bar.click();
+          for (const bar of folded) if (bar.isConnected && bar.getAttribute("aria-expanded") === "false") fillClick(bar);
         } finally {
           writing = false;
         }
@@ -3955,6 +3972,9 @@ if (!window.__applicationLane) {
           wrapper.querySelector<HTMLInputElement>(`input[role="spinbutton"][aria-label="${name}"]`),
         );
         if (sections.some((section) => !section)) continue;
+        // Only where the applicant lets a fill sign (signatures.ts).
+        const signs = signatureField(sections[0]!);
+        if (!signs || !signingAllowed(command.profile?.signatures, signs)) continue;
         const values = sections.map((section) => section!.value);
         if (values.every((value) => !value)) continue;
         if (values.every((value, i) => Number(value) === Number(today[i]))) continue;
@@ -4253,7 +4273,7 @@ if (!window.__applicationLane) {
               window.addEventListener("submit", block, true);
               try {
                 expectOwnedActivation(element, "click");
-                element.click();
+                fillClick(element);
               } finally {
                 window.removeEventListener("submit", block, true);
               }
@@ -4392,7 +4412,7 @@ if (!window.__applicationLane) {
           }
           writing = true;
           try {
-            button.click();
+            fillClick(button);
             let options: string[] = [];
             let steady = 0;
             for (let attempt = 0; attempt < 40 && steady < 2 && current(); attempt++) {
@@ -4412,7 +4432,7 @@ if (!window.__applicationLane) {
               await pause(100);
             }
             if (button.getAttribute("aria-expanded") === "true") {
-              (document.querySelector<HTMLElement>('[data-automation-id="mainContent"]') || document.body).click();
+              fillClick(document.querySelector<HTMLElement>('[data-automation-id="mainContent"]') || document.body);
               await pause(100);
             }
             if (document.activeElement === button) button.blur();
@@ -4440,7 +4460,7 @@ if (!window.__applicationLane) {
             writing = true;
             try {
               input.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, composed: true, button: 0, view: window }));
-              input.click();
+              fillClick(input);
               for (let waited = 0; waited < 1500 && !options.length && current(); waited += 100) {
                 await pause(100);
                 options = drawnOptions(input);
@@ -4474,10 +4494,10 @@ if (!window.__applicationLane) {
           if (!options.length) {
             writing = true;
             try {
-              input.click();
+              fillClick(input);
               for (let waited = 0; waited < 300 && input.getAttribute("aria-expanded") !== "true"; waited += 50) await pause(50);
               if (input.getAttribute("aria-expanded") !== "true")
-                input.parentElement?.querySelector<HTMLButtonElement>('button[aria-hidden="true"][tabindex="-1"]')?.click();
+                fillClick(input.parentElement?.querySelector<HTMLButtonElement>('button[aria-hidden="true"][tabindex="-1"]'));
               for (let waited = 0; waited < 1500 && !options.length && current(); waited += 100) {
                 await pause(100);
                 options = listed();
@@ -4532,7 +4552,7 @@ if (!window.__applicationLane) {
           const input = record.element as HTMLInputElement;
           writing = true;
           try {
-            arrow.click();
+            fillClick(arrow);
             let options: string[] = [];
             for (let attempt = 0; attempt < 20 && !options.length && current(); attempt++) {
               await pause(50);
@@ -4541,7 +4561,7 @@ if (!window.__applicationLane) {
               options = [...(list?.querySelectorAll<HTMLElement>('[role="option"]') || [])]
                 .map((option) => (option.textContent || "").trim()).filter(Boolean).slice(0, 100);
             }
-            if (input.getAttribute("aria-expanded") === "true" && !input.value) arrow.click();
+            if (input.getAttribute("aria-expanded") === "true" && !input.value) fillClick(arrow);
             // The arrow hands focus to the input, sometimes a moment later.
             for (let waited = 0; waited < 600; waited += 50) {
               await pause(50);
@@ -4562,7 +4582,7 @@ if (!window.__applicationLane) {
           const input = record.element;
           writing = true;
           try {
-            input.click();
+            fillClick(input);
             let options: string[] = [];
             let steady = 0;
             for (let attempt = 0; attempt < 60 && steady < 3 && options.length < 300 && current(); attempt++) {
@@ -4595,7 +4615,7 @@ if (!window.__applicationLane) {
           const control = record.element;
           writing = true;
           try {
-            control.click();
+            fillClick(control);
             let options: string[] = [];
             for (let attempt = 0; attempt < 20 && !options.length && current(); attempt++) {
               await pause(50);

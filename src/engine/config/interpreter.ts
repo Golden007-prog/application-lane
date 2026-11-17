@@ -17,6 +17,8 @@ import { normalize, type Profile } from "../../shared/model";
 import { pickOption } from "../../shared/answers";
 import { skillNames } from "../../shared/skill-names";
 import { pickMonth } from "../page/month-picker";
+import { controlKind, pressedControl, refusedMessage } from "../page/click-gate";
+import { signatureField, signatureLeftReason, signingAllowed } from "../page/signatures";
 import { listedNames, type OptionsSource, type SiteOptions } from "./options-source";
 import { nameVariants } from "../../shared/matching";
 import { sameStreet, streetOption } from "../../shared/answers";
@@ -78,8 +80,6 @@ export type InterpreterOptions = {
   signal?: AbortSignal;
 };
 
-const dangerousLabel =
-  /\b(submit|send|finish|sign|agree|certify|certification)\b|\bcomplete application\b/i;
 const nonMutatingMethods = new Set([
   "blur",
   "scrollListboxToOption",
@@ -289,9 +289,7 @@ async function defaultExecute(request: MethodRequest): Promise<boolean> {
   if (method === "click" || method === "reactClick") {
     // An entry's save the row's own pass already verified (see entrySave).
     if (!request.entrySave && isForbiddenClick(element, request.forbidden || new Set()))
-      throw new Error(
-        "Refused to activate a submit or certification control.",
-      );
+      throw new Error(forbiddenReason(element));
     const clickable = element as HTMLElement;
     if (typeof clickable.click !== "function") return false;
     clickable.click();
@@ -1747,7 +1745,7 @@ function entrySave(element: Element, scope: Element | undefined, forbidden: Set<
   if (!scope || !isTag(element, "button") || !inside) return false;
   return (
     ![...forbidden].some((submit) => submit === element || element.contains(submit)) &&
-    !dangerousLabel.test(labelOf(element))
+    controlKind(labelOf(element)) === "other"
   );
 }
 
@@ -1774,11 +1772,17 @@ function isForbiddenClick(
     if (
       checkLabel &&
       node.matches('button,a,[role="button"]') &&
-      dangerousLabel.test(labelOf(node))
+      controlKind(labelOf(node)) !== "other"
     )
       return true;
   }
   return false;
+}
+
+// Why a click was refused, in the applicant's words.
+function forbiddenReason(element: Element) {
+  const pressed = pressedControl(element, labelOf);
+  return pressed ? refusedMessage[pressed.kind] : refusedMessage.submit;
 }
 
 // A click on the page around the field being filled (Workday's
@@ -2011,7 +2015,7 @@ async function runAction(
       action.event === "click") &&
     isForbiddenClick(target, forbidden, true, options.context)
   )
-    throw new Error("Refused to activate a submit or certification control.");
+    throw new Error(forbiddenReason(target));
   if (mutates && target.matches('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"],[role="option"]') &&
       /^(?:other|not listed)(?:$|\s*[(:])/i.test(labelOf(target)) &&
       !values.some((candidate) => /^(?:other|not listed)$/i.test(candidate.trim())))
@@ -2101,9 +2105,7 @@ export async function interpretConfig(
         clicks &&
         (request.entrySave || entrySave(request.element, options.context, currentForbidden));
       if (!save && isForbiddenClick(request.element, currentForbidden, clicks, options.context))
-        throw new Error(
-          "Refused to activate a submit or certification control.",
-        );
+        throw new Error(forbiddenReason(request.element));
       if (!nonMutatingMethods.has(request.method) &&
           request.element.matches('input[type="radio"],input[type="checkbox"],[role="radio"],[role="checkbox"],[role="option"]') &&
           /^(other\b|not listed\b)/i.test(labelOf(request.element)) &&
@@ -2547,8 +2549,7 @@ export async function interpretConfig(
                   break selectorChoices;
                 }
                 if (isForbiddenClick(add, forbidden)) {
-                  lastReason =
-                    "Refused to activate a submit or certification control.";
+                  lastReason = forbiddenReason(add);
                   lastStatus = "failed";
                   break selectorChoices;
                 }
@@ -2788,6 +2789,14 @@ export async function interpretConfig(
           options,
         );
       if (!element) continue;
+      // A signature, or its date, only as the applicant's settings allow
+      // (signatures.ts): a typed name there signs for them.
+      const signs = signatureField(element);
+      if (signs && !signingAllowed(profile.signatures, signs)) {
+        lastReason = signatureLeftReason(signs);
+        lastStatus = "skipped";
+        continue;
+      }
       if (/^(work_auth|sponsorship)$/.test(key.replace(/_[234]$/, "")) &&
           /^does your work authorization\b.*\binvolve (cpt|opt)\b/i.test(questionText(element))) {
         lastReason = "Generic authorization does not confirm CPT or OPT immigration status.";
@@ -3225,9 +3234,7 @@ export async function interpretConfig(
             ["click", "reactClick"].includes(method) &&
             isForbiddenClick(element, forbidden, true, options.context)
           )
-            throw new Error(
-              "Refused to activate a submit or certification control.",
-            );
+            throw new Error(forbiddenReason(element));
           if (
             !nonMutatingMethods.has(method) &&
             !["click", "reactClick", "event"].includes(method) &&

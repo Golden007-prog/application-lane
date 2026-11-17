@@ -3087,6 +3087,8 @@ test("captured Workday terms acknowledgement is explicit and narrowly scoped", a
 // given a value: it is left for a fill that can type.
 test("a Workday date section is left alone, not assigned, while real keys are refused", async () => {
   const workdayOrigin = atsOrigins[0];
+  // Signing is the applicant's choice (Profile.signatures).
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, signatures: "self-id" } });
   await context.route(`${workdayOrigin}/**`, (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -3145,6 +3147,8 @@ test("a Workday date section is left alone, not assigned, while real keys are re
 // the signing date was left empty.
 test("a Workday date is typed once the applicant's last click has passed", async () => {
   const workdayOrigin = atsOrigins[0];
+  // Signing is the applicant's choice (Profile.signatures).
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, signatures: "self-id" } });
   await context.route(`${workdayOrigin}/**`, (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -3196,6 +3200,8 @@ test("a Workday date is typed once the applicant's last click has passed", async
 
 test("captured Workday disability date spinbuttons receive today's date", async () => {
   const workdayOrigin = atsOrigins[0];
+  // Signing is the applicant's choice (Profile.signatures).
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, signatures: "self-id" } });
   await context.route(`${workdayOrigin}/**`, (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -3349,6 +3355,8 @@ test("Workday's race checkbox group ticks the applicant's race", async () => {
 // reported "required" because the fill never said focus left it.
 test("in a window without focus, a Workday field the site already focused is saved", async () => {
   const workdayOrigin = atsOrigins[0];
+  // Signing is the applicant's choice (Profile.signatures).
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, signatures: "self-id" } });
   await context.route(`${workdayOrigin}/**`, (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -3412,6 +3420,8 @@ test("a field the site rebuilds empty after a fill is filled again, not protecte
 
 test("a stale Workday signing date left on the page is retyped as today", async () => {
   const workdayOrigin = atsOrigins[0];
+  // Signing is the applicant's choice (Profile.signatures).
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, signatures: "all" } });
   await context.route(`${workdayOrigin}/**`, (route) =>
     route.fulfill({
       contentType: "text/html",
@@ -12265,6 +12275,8 @@ test("LinkedIn and Indeed are read and drafted for, and never written to", async
 test("Lever's self-identification date is filled with today's date", async () => {
   // As one employer's form (issue report): the date beside the
   // disability form's name was left alone as a signature. It is a date.
+  // Signing is the applicant's choice (Profile.signatures).
+  await ui({ type: "API", path: "/v1/profile", method: "PUT", body: { ...profile, signatures: "self-id" } });
   const form = "https://jobs.lever.co/datedco/59e0cf9b-04d7-43c0-8a65-9d411fe56c68/apply";
   await context.route(form, (route) =>
     route.fulfill({
