@@ -2050,12 +2050,22 @@ function conditionalAddress(field: Field, fields: Field[], profile: Profile): st
 // same question in between are passed over; any other question before it,
 // or one not answered, leaves the list alone.
 const notApplicableChoices = ["N/A", "Not applicable", "None", "Not Applicable (N/A)", "N/A - Not applicable"];
+// A box written in says itself what a No takes: Oracle's "If your response
+// above is “Yes”, what type of sponsorship do you require? If no, please
+// type N/A.", required, after sponsorship answered No.
 function conditionalNotApplicable(field: Field, fields: Field[]): { value: string; choices: string[] } | undefined {
-  if (field.value || field.protected || !/^(combobox|select|radio)$/.test(field.kind)) return undefined;
-  if (!/^if (yes|so)\b/.test(normalize(field.question || field.label))) return undefined;
+  if (field.value || field.protected) return undefined;
+  const asked = normalize(field.question || field.label);
+  const typed = /^(text|textarea)$/.test(field.kind) && !field.options.length;
+  if (!typed && !/^(combobox|select|radio)$/.test(field.kind)) return undefined;
+  if (typed
+    ? !(/^if (yes|so|your (response|answer)( (above|to the (previous|above|prior) question))? (is|was) yes)\b/.test(asked) &&
+      /\bif (no|not)\b,? (please )?(type|enter|write|put|input|indicate)( in)? n a$/.test(asked))
+    : !/^if (yes|so)\b/.test(asked)) return undefined;
   const at = fields.indexOf(field);
   const before = fields.slice(0, Math.max(0, at)).reverse().find((other) => !/^if\b/.test(normalize(other.question || other.label)));
   if (!before || !/^no$/i.test(before.value.trim())) return undefined;
+  if (typed) return { value: "N/A", choices: [] };
   const offered = field.options.length
     ? field.options.filter((option) => notApplicableChoices.some((choice) => normalize(choice) === normalize(option)))
     : notApplicableChoices;

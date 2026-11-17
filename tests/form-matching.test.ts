@@ -2449,6 +2449,13 @@ test("Riot Games' Greenhouse lists: Other as None of the above, a business-fluen
   assert.equal(proposals([{ ...parent, value: "Yes" }, month], speaker).find((p) => p.fieldId === "month"), undefined);
   assert.equal(proposals([parent, { ...month, options: months.slice(1) }], speaker).find((p) => p.fieldId === "month"), undefined);
   assert.equal(proposals([{ ...parent, value: "" }, month], speaker).find((p) => p.fieldId === "month"), undefined);
+  // Oracle's box after sponsorship answered No, saying itself to type N/A.
+  const sponsor = field("Will you now or in the future require Contoso to provide any form of sponsorship to work or continue to work for Contoso in the U.S.? (e.g. H-1B, TN, L1, OPT, etc.).", { id: "sponsor", kind: "radio", options: ["Yes", "No"], value: "No" });
+  const kind = field("If your response above is “Yes”, what type of sponsorship do you require? If no, please type N/A.", { id: "kind", kind: "textarea", required: true });
+  assert.equal(proposals([sponsor, kind], speaker).find((p) => p.fieldId === "kind")?.value, "N/A");
+  // After a Yes, or unanswered, the type is the applicant's.
+  assert.notEqual(proposals([{ ...sponsor, value: "Yes" }, kind], speaker).find((p) => p.fieldId === "kind")?.value, "N/A");
+  assert.notEqual(proposals([{ ...sponsor, value: "" }, kind], speaker).find((p) => p.fieldId === "kind")?.value, "N/A");
 });
 
 // Enovation's Paylocity rows: with "When can you
