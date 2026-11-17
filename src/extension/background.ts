@@ -250,6 +250,7 @@ async function checkSteps(app: Application): Promise<{ check: StepCheck; targets
       }),
     )
   ).filter((reply): reply is Reply & { frameId: number } => Boolean(reply));
+  if (!replies.length) throw new Error("The page did not answer. Refresh its tab, then try again.");
   const targets: Partial<Record<"next" | "submit", StepTarget>> = {};
   const problems: Partial<Record<"next" | "submit", string>> = {};
   for (const kind of ["next", "submit"] as const) {
@@ -609,11 +610,17 @@ async function frameCall(
     // Chrome can lose a read receiver when the page replaces its document.
     // Reinstall and retry one read only. Mutations keep their existing
     // navigation handling and are never replayed after an uncertain result.
-    if (!["ENGINE_INFO", "BIND", "INSPECT"].includes(String(message.type)) ||
-      !/receiving end does not exist/i.test(original.message) || !alive(app, operation)) throw original;
+    // The applicant's Next step and Submit check (STEP_CHECK) is a read too,
+    // and theirs, made whatever the fill's state: a tab whose script an
+    // extension reload left behind answered nothing, and its Submit
+    // application was "not found".
+    const own = message.type === "STEP_CHECK";
+    const current = () => own || alive(app, operation);
+    if (!["ENGINE_INFO", "BIND", "INSPECT", "STEP_CHECK"].includes(String(message.type)) ||
+      !/receiving end does not exist/i.test(original.message) || !current()) throw original;
     try {
       await chrome.scripting.executeScript({ target: { tabId: app.tabId, frameIds: [frameId] }, files: ["content.js"], injectImmediately: true });
-      if (!alive(app, operation)) throw new Error("Application operation is stale or paused.");
+      if (!current()) throw new Error("Application operation is stale or paused.");
       result = await chrome.tabs.sendMessage(app.tabId, payload, { frameId });
     } catch (recoveryError) {
       // Re-injection can itself fail because Chrome has removed the frame.

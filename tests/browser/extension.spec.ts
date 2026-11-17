@@ -21155,3 +21155,43 @@ test("Next step and Submit press only the page's one control, Submit once turned
   expect(await page.evaluate(() => (window as any).submitted)).toBe(1);
   await page.close();
 });
+
+test("Submit finds the page's button on a tab whose script is gone, as after an extension reload", async () => {
+  const form = "https://jobs.lever.co/stepco/5c1e6c3a-7f0d-4b55-9a8e-1c2d3e4f5a6b/apply";
+  // Greenhouse's own submit control, as captured.
+  let slow = false;
+  await context.route(form, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><title>Step Co - Engineer</title>
+        <form class="application-form" onsubmit="event.preventDefault(); window.submitted++">
+          <label>Email<input name="email" type="email" required value="alex@example.test"></label>
+          <div class="application--submit"><button type="submit" class="btn btn--pill" aria-disabled="false">Submit application</button></div>
+        </form>
+        <img src="https://jobs.lever.co/stepco/logo.png" alt="">
+        <script>window.submitted = 0;</script>`,
+    }),
+  );
+  // Held while the page reloads: the tab is not "complete", so nothing has
+  // put a page script in it yet, as in a tab an extension reload left.
+  let release = () => {};
+  await context.route("https://jobs.lever.co/stepco/logo.png", async (route) => {
+    if (slow) await new Promise<void>((resolve) => { release = resolve; });
+    await route.fulfill({ status: 404, body: "" });
+  });
+  const page = await context.newPage();
+  await page.goto(form);
+  const tabId = await panel.evaluate(
+    async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url)!.id!,
+    page.url(),
+  );
+  await ui({ type: "TRACK_TAB", tabId });
+  const id = (await state()).applications[0].id;
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 30_000 }).not.toMatch(/^(inspecting|preparing|filling)$/);
+  slow = true;
+  await page.reload({ waitUntil: "domcontentloaded" });
+  expect((await ui({ type: "STEP_CHECK", id })).submit).toBe("Submit application");
+  expect(await page.evaluate(() => (window as any).submitted)).toBe(0);
+  release();
+  await page.close();
+});
