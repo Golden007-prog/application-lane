@@ -978,6 +978,8 @@ export type IssueReport = {
   // The recording of what happened: the last fill's (every fill records
   // itself), or the applicant's own.
   recordingId?: string;
+  // Which profile the fill used (a capture's stamp; never shared).
+  profile?: { revision: number; fingerprint: string };
   // The page's network traffic, saved beside the report as a HAR to replay.
   // fromLoad: it holds the page from its first request.
   network?: { entries: number; fromLoad: boolean; recovered?: number; missing?: number };

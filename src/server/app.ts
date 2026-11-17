@@ -24,7 +24,7 @@ import { extractResume, transcriptsFolder } from "./documents";
 import { desktopPath, exportDocuments, exportedPaths, markSent, openFolder, removeWritten } from "./export";
 import { bundleSchema, exportBundle, importTailoringFiles, importedTailoring } from "./profile-bundle";
 import { skillContext } from "./answers";
-import { applicationProfile, profileConflicts } from "./profile-sync";
+import { applicationProfile, profileConflicts, profileStamp } from "./profile-sync";
 import { configView, saveTranscript, updateConfig } from "./settings";
 import { packageRoot, packageVersion } from "./paths";
 import { Pairing, pairingBanner, type PairingAnnouncement } from "./pairing";
@@ -628,7 +628,12 @@ export async function createApp(
             frames: z.array(z.record(z.unknown())).max(100),
           })
           .parse(await jsonBody(req, 100 * 1024 * 1024));
-        const { har, ...capture } = bundle;
+        const { har, ...fields } = bundle;
+        // The profile this fill used: the per-application profile served for
+        // its job (what the extension fetched), stamped here because the
+        // extension does not hold it at capture time.
+        const title = typeof fields.application?.title === "string" ? fields.application.title : "";
+        const capture = { ...fields, profile: profileStamp(await applicationProfile(store.data.profile, config, title.slice(0, 300))) };
         if (har && capture.network?.entries !== har.log.entries.length) throw new Error("Network capture does not match capture.");
         await mkdir(join(directory, "captures"), { recursive: true });
         // The capture JSON is what readers list: written after its HAR.

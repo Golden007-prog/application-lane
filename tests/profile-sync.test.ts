@@ -8,6 +8,7 @@ import {
   internshipRole,
   markdownEntries,
   profileConflicts,
+  profileFingerprint,
   withGraduation,
 } from "../src/server/profile-sync";
 
@@ -133,4 +134,14 @@ test("plain preference entries become standing answers, and hedged ones do not",
   // Hedged or absent entries say nothing.
   const hedged = "- **Relocation:** Depends on the city.\n- **Remote vs. onsite preference:** Remote only.\n- **Security clearance:** Held Secret until 2022.";
   assert.deepEqual(preferenceAnswers(hedged, "Engineer"), []);
+});
+
+test("the profile fingerprint is stable, follows answers, and ignores revision and timestamps", () => {
+  const base = () => profileSchema.parse({ firstName: "Alex", lastName: "Rivera", email: "alex.rivera@example.com", confirmed: true, facts: [], answers: [{ question: "Pronouns?", answer: "they/them" }] });
+  const a = base();
+  assert.match(profileFingerprint(a), /^[0-9a-f]{64}$/);
+  assert.equal(profileFingerprint(a), profileFingerprint(base()));
+  assert.equal(profileFingerprint({ ...a, revision: 9, updatedAt: 5 } as any), profileFingerprint(a));
+  assert.notEqual(profileFingerprint({ ...a, answers: [{ question: "Pronouns?", answer: "she/her" }] }), profileFingerprint(a));
+  assert.notEqual(profileFingerprint({ ...a, city: "Acme City" }), profileFingerprint(a));
 });

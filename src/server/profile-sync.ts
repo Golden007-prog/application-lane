@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { answerChoices, canonicalAnswer, type ChoiceField } from "../shared/answers";
 import type { Profile } from "../shared/model";
 import { authorizationAnswer } from "../shared/authorization";
@@ -204,3 +205,28 @@ export function conflictWarning(conflicts: ProfileConflict[]): string[] {
     `Your extension profile and your tailoring notes disagree, so this application may contradict itself. Yes/no answers use the extension profile; written answers use the files. ${list}`.slice(0, 350),
   ];
 }
+
+// What a fill capture records of the profile it used, to tell later whether
+// the profile has changed since: the saved revision and a fingerprint.
+// The fingerprint is the SHA-256 (hex) of a stable JSON (keys sorted) of
+// everything that can change an answer: the scalar fields, answers, legal
+// details, standing answers and preferences, work, education, skills,
+// languages, references, facts and role overrides. Left out: the revision
+// itself, schemaVersion, applyingTo (the job, set per fill) and any
+// createdAt/updatedAt timestamps, which change without changing an answer.
+const NOT_ANSWERS = new Set(["revision", "schemaVersion", "applyingTo", "createdAt", "updatedAt"]);
+function stable(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(stable);
+  if (value && typeof value === "object")
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .filter(([key, item]) => !NOT_ANSWERS.has(key) && item !== undefined)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([key, item]) => [key, stable(item)]),
+    );
+  return value;
+}
+export function profileFingerprint(profile: Profile): string {
+  return createHash("sha256").update(JSON.stringify(stable(profile))).digest("hex");
+}
+export const profileStamp = (profile: Profile) => ({ revision: profile.revision, fingerprint: profileFingerprint(profile) });

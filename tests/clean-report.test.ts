@@ -139,3 +139,11 @@ test("details run together with the words around them are replaced too", () => {
   words.note = "Morgantown and Elleryson are other places.";
   assert.equal(cleanReport(words, { profile, applications }).report.note, "Morgantown and Elleryson are other places.");
 });
+
+test("a cleaned report drops the profile fingerprint and revision", () => {
+  const withStamp = { ...report(), profile: { revision: 7, fingerprint: "ab".repeat(32) } };
+  const { report: cleaned } = cleanReport(withStamp, { profile, applications });
+  assert.equal("profile" in cleaned, false);
+  const text = JSON.stringify(cleaned);
+  assert.ok(!text.includes("ab".repeat(32)) && !text.includes("fingerprint") && !text.includes("revision"));
+});

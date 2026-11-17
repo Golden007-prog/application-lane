@@ -360,3 +360,31 @@ test("deleting local data removes reports, captures, searches, the fixer's resul
     await new Promise<void>((resolve) => server.close(() => resolve()));
   }
 });
+
+test("a stored capture carries the profile revision and fingerprint", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lane-capture-stamp-"));
+  const cfg = configSchema.parse({ postingLookup: false, token: "test-token-".repeat(7), model: "test", endpoint: "http://127.0.0.1:9999/v1" });
+  const { server } = await createApp(cfg, directory);
+  server.listen(0, "127.0.0.1");
+  await once(server, "listening");
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}`;
+  const headers = { Authorization: `Bearer ${cfg.token}`, "Content-Type": "application/json" };
+  const id = "00000000-0000-4000-8000-0000000000d1";
+  try {
+    const reply = await fetch(`${url}/v1/captures`, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        id, createdAt: 1, trigger: "fill", application: { title: "Engineer", company: "Acme" },
+        tab: { tabId: 1, url: "https://acme.example/jobs/1", title: "Engineer at Acme" },
+        extension: { version: "0.1.0", contentVersion: "test" }, frames: [],
+      }),
+    });
+    assert.equal(reply.status, 201);
+    const stored = JSON.parse(await readFile(join(directory, "captures", `${id}.json`), "utf8"));
+    assert.equal(typeof stored.profile.revision, "number");
+    assert.match(stored.profile.fingerprint, /^[0-9a-f]{64}$/);
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  }
+});

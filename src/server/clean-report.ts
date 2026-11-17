@@ -226,12 +226,14 @@ export function cleanReport(report: IssueReport, input: CleanInput): CleanedRepo
   // Left out: the network log (cookies, posted answers, other requests), the
   // recording, the screenshots (pictures of the applicant's own screen), and
   // what the fixer made of it, which is this machine's business.
-  const { network, recordingId, images, fixer, ...rest } = report;
+  const { network, recordingId, images, fixer, profile: used, ...rest } = report;
   const removed: string[] = [];
   if (network) removed.push("the page's network log");
   if (recordingId) removed.push("the recording of the fill");
   if (images?.length) removed.push(images.length === 1 ? "the screenshot" : `${images.length} screenshots`);
   void fixer;
+  // Which profile the fill used (its revision and fingerprint) is this machine's business.
+  void used;
 
   const cleaned = mapStrings(rest as IssueReport, (value) => {
     let result = value;
