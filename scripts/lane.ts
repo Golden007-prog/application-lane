@@ -344,6 +344,8 @@ async function ui() {
   // Marking one submitted asks first too, as the panel's button does not
   // undo itself (the TUI's m).
   let submitting: QueueSummaryItem | undefined;
+  // S: the application whose page's Submit, with this label, waits for y.
+  let sending: { app: QueueSummaryItem; label: string } | undefined;
   const line = await connect(
     (next) => {
       queue = next;
@@ -474,7 +476,7 @@ async function ui() {
         ? "paste or type links, Enter to queue, Esc to cancel"
         : searching()
           ? "←/→ tabs · ↑/↓ select · a queue this opening · / search again · q quit"
-          : "←/→ tabs · ↑/↓ select · f fill this step · s switch to its tab · m mark submitted · x abandon · a add links · r refresh · q quit",
+          : "←/→ tabs · ↑/↓ select · f fill this step · n next · S submit · s switch to its tab · m mark submitted · x abandon · a add links · r refresh · q quit",
       width,
       "\x1b[2m",
     ));
@@ -542,6 +544,19 @@ async function ui() {
       } else message = "Not abandoned.";
       return draw();
     }
+    if (sending) {
+      const { app, label } = sending;
+      sending = undefined;
+      if (k === "\u0003") return quit();
+      if (k === "y" || k === "Y") {
+        message = `Pressing "${label}" on ${name(app)}…`;
+        draw();
+        const result = await line.send("submit", app.id, label);
+        message = result.ok ? `${name(app)}: ${result.detail || "submitted."}` : `${name(app)}: ${result.error}`;
+        queue = await snapshot().catch(() => queue);
+      } else message = "Not submitted.";
+      return draw();
+    }
     if (submitting) {
       const app = submitting;
       submitting = undefined;
@@ -584,6 +599,35 @@ async function ui() {
     } else if (k === "x" && !searching() && list[row]) {
       abandoning = list[row] as QueueSummaryItem;
       message = `Abandon ${name(abandoning)}? Any fill stops; what is on the page stays. y to abandon, any other key to keep it.`;
+    } else if (k === "n" && !searching() && list[row]) {
+      // The page's own Next or Continue, as the panel's Next step.
+      const app = list[row] as QueueSummaryItem;
+      message = `Pressing Next on ${name(app)}…`;
+      draw();
+      const result = await line.send("next", app.id);
+      message = result.ok ? `${name(app)}: ${result.detail || "done."}` : `${name(app)}: ${result.error}`;
+    } else if (k === "S" && !searching() && list[row]) {
+      // The page's own Submit, as the panel's Submit…: what it would press
+      // and what to check first, then y to press it.
+      const app = list[row] as QueueSummaryItem;
+      message = `Checking ${name(app)}…`;
+      draw();
+      const result = await line.send("steps", app.id);
+      if (!result.ok) message = `${name(app)}: ${result.error}`;
+      else {
+        const check = JSON.parse(result.detail || "{}") as StepCheck;
+        const unfinished = [...check.blockers, ...check.unfinished];
+        if (!check.submit) message = `${name(app)}: ${check.submitProblem}`;
+        else if (unfinished.length) message = `${name(app)}: not ready to submit. ${unfinished.slice(0, 3).join("; ")}${unfinished.length > 3 ? "; …" : ""}`;
+        else {
+          sending = { app, label: check.submit };
+          // The line is cut at the terminal's width: the question first, the
+          // counts next; lane submit lists every answer and note.
+          const ai = check.aiFilled.length ? ` AI filled ${check.aiFilled.length}: ${check.aiFilled.slice(0, 3).join("; ")}${check.aiFilled.length > 3 ? "; …" : ""}.` : "";
+          const notes = check.notes.length ? ` ${check.notes.length} fill note${check.notes.length === 1 ? "" : "s"}.` : "";
+          message = `y presses "${check.submit}" on ${name(app)}; any other key keeps it.${ai}${notes}`;
+        }
+      }
     } else if ((k === "f" || k === "s") && !searching() && list[row]) {
       const app = list[row] as QueueSummaryItem;
       message = `${k === "f" ? "Filling" : "Switching to"} ${name(app)}…`;
@@ -681,7 +725,7 @@ if (!run) {
   release <application> "<why>"  back to the applicant with defects open, saying why
   repairs [--all] [--json]  repair records; published <commit> marks a pushed batch
   search [options]    find openings to apply for (see below); search add 1 2 queues them
-  ui                  a full-screen view: tabs by stage, f fill, s switch, x abandon, a add links, a find-jobs tab
+  ui                  a full-screen view: tabs by stage, f fill, n next, S submit, s switch, x abandon, a add links, a find-jobs tab
   pair                show a new pairing code to connect another browser or extension
   --theme <name>      colours: midnight (default), velocity, ember, aurora, sage, contrast (or LANE_THEME);
                       NO_COLOR turns them off, FORCE_COLOR=0..3 forces a depth

@@ -109,7 +109,7 @@ npm run lane -- submit acme     # show what Submit would press, then press it on
 npm run lane -- switch acme     # bring its tab to the front
 npm run lane -- search            # find openings with your saved Find jobs settings
 npm run lane -- search add 1 3    # queue openings by their number
-npm run lane -- ui                # full-screen view: ↑/↓ choose, f fill, s switch, a add links
+npm run lane -- ui                # full-screen view: ↑/↓ choose, f fill, n next, S submit, s switch, a add links
 ```
 
 If you installed the backend package, the same commands are available as `lane status`, `lane ui` and so on.
