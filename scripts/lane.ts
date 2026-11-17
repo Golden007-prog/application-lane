@@ -23,7 +23,7 @@ import { join } from "node:path";
 import { randomUUID } from "node:crypto";
 import WebSocket from "ws";
 import { dataDirectory } from "../src/server/store";
-import type { QueueSnapshot, QueueSummaryItem, SubmissionRecord } from "../src/shared/model";
+import type { QueueSnapshot, QueueSummaryItem, StepCheck, SubmissionRecord } from "../src/shared/model";
 import { themes } from "../src/shared/theme";
 import { computeProgress, DEFAULT_DAILY_GOAL } from "../src/shared/progress";
 import { colorDepth, createPalette, openingLine, styled, tabStrip, terminalTheme, visible } from "./lane-view";
@@ -217,13 +217,53 @@ async function own() {
   console.log(`${name(app)}: ${result.detail || "done."}`);
 }
 
-async function act(action: "fill" | "switch" | "abandon" | "refresh" | "submitted" | "unlock") {
+async function act(action: "fill" | "switch" | "abandon" | "refresh" | "submitted" | "unlock" | "next") {
   const app = find(await snapshot(), words.join(" "));
   const line = await connect();
   const result = await line.send(action, app.id);
   line.socket.close();
   if (!result.ok) throw new Error(result.error || "It did not work.");
   console.log(`${name(app)}: ${result.detail || "done."}`);
+}
+
+// lane submit: what the page's Submit would press and what is unfinished
+// or filled by AI, then, once confirmed (or with --yes), that press. The
+// panel's Submit… does the same; it is off until Settings → Processing turns
+// it on.
+async function submitStep() {
+  const yes = words.includes("--yes");
+  const app = find(await snapshot(), words.filter((word) => word !== "--yes").join(" "));
+  const line = await connect();
+  try {
+    const checked = await line.send("steps", app.id);
+    if (!checked.ok) throw new Error(checked.error || "It did not work.");
+    const check = JSON.parse(checked.detail || "{}") as StepCheck;
+    const list = (title: string, items: string[]) => {
+      if (!items.length) return;
+      console.log(title);
+      for (const item of items) console.log(`  - ${item}`);
+    };
+    console.log(`${name(app)}: ${check.submit ? `this presses "${check.submit}".` : check.submitProblem}`);
+    list("Not ready:", check.blockers);
+    list("Unfinished on this step:", check.unfinished);
+    list("Filled by AI, check before submitting:", check.aiFilled);
+    list("Notes from the fill:", check.notes);
+    if (!check.submit || check.blockers.length || check.unfinished.length) throw new Error("Not submitted. Finish the page first.");
+    if (!yes) {
+      if (!process.stdin.isTTY) throw new Error("Not submitted. Run it in a terminal to confirm, or add --yes.");
+      const answer = await new Promise<string>((resolve) => {
+        process.stdout.write("Submit now? [y/N] ");
+        process.stdin.once("data", (data) => resolve(String(data).trim()));
+      });
+      process.stdin.pause();
+      if (!/^y(es)?$/i.test(answer)) return console.log("Not submitted.");
+    }
+    const result = await line.send("submit", app.id, check.submit);
+    if (!result.ok) throw new Error(result.error || "It did not work.");
+    console.log(`${name(app)}: ${result.detail || "done."}`);
+  } finally {
+    line.socket.close();
+  }
 }
 
 // Finding jobs (src/server/job-search.ts): the saved settings, with these
@@ -596,6 +636,8 @@ const commands: Record<string, () => Promise<unknown>> = {
   failures,
   watch,
   fill: () => act("fill"),
+  next: () => act("next"),
+  submit: submitStep,
   switch: () => act("switch"),
   abandon: () => act("abandon"),
   submitted: () => act("submitted"),
@@ -622,6 +664,10 @@ if (!run) {
   failures [--json]   fills that failed, with why
   watch               print each change as it happens
   fill <application>  Fill this step on its tab
+  next <application>  press the page's Next or Continue (never Submit)
+  submit <application> [--yes]
+                      show what Submit would press and what is unfinished, then press it once you confirm
+                      (off until Settings → Processing turns it on)
   switch <application> bring its tab to the front in Chrome
   abandon <application> stop applying: any fill stops, and it moves to Abandoned
   reload              the extension takes its newest build (not while anything is being filled)

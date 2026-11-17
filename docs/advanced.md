@@ -125,6 +125,10 @@ After **Fill this step**, **Unfilled structured fields** lists empty fields your
 
 **Legal and eligibility questions** (a conviction, a clearance, a relative at the company) are left for you unless **Your profile → Legal and eligibility details** answers them. The final Submit is always yours. Signatures and consent boxes are yours too unless you allow them under **Your profile**: **Signatures** can sign the name and date on self-identification forms (disability, veteran) or every form including attestations, and a separate box lets terms, privacy and certification boxes be ticked. A signature typed for you is a legal signature; check the form before you submit it.
 
+## Next step and Submit
+
+**Next step** on an application's card (and `lane next`) presses the page's own Next, Continue or Save and Continue. **Submit…** (and `lane submit`) is off until you turn it on under **Settings → Processing**; it first shows the button it will press, any empty required fields, the answers AI filled and the fill's notes, and presses only that button, after you confirm. Either one presses nothing when the page has no such button, more than one, or a required field still empty, and neither ever presses a button that also signs or agrees ("Agree and continue"). Settings → Processing can hide **Next step** too.
+
 ## What happens when you edit
 
 You can scroll and read the page while it fills. Typing, clicking or tapping a form control pauses that application's current fill; scrolling and clicks on empty space do not. Other applications keep filling. Choose **Fill this step** again when ready. Existing values and fields you edited, including fields you cleared, are protected. Fields whose identity becomes uncertain after the page re-renders are left for you.

@@ -21042,3 +21042,52 @@ test("while documents are tailoring, the panel shows a progress bar for each doc
   await expect(bars).toHaveCount(0, { timeout: 30000 });
   expect((await state()).applications[0].tailoring).toBeUndefined();
 });
+
+test("Next step and Submit press only the page's one control, Submit once turned on and confirmed", async () => {
+  const form = "https://jobs.lever.co/stepco/2b1e6c3a-7f0d-4b55-9a8e-1c2d3e4f5a6b/apply";
+  await context.route(form, (route) =>
+    route.fulfill({
+      contentType: "text/html",
+      body: `<!doctype html><title>Step Co - Engineer</title>
+        <form class="application-form" onsubmit="event.preventDefault(); window.submitted++">
+          <label>Email<input name="email" type="email" required value="alex@example.test"></label>
+          <button type="button" onclick="window.nexts++">Continue</button>
+          <button type="submit">Submit application</button>
+        </form>
+        <script>window.nexts = 0; window.submitted = 0;</script>`,
+    }),
+  );
+  const page = await context.newPage();
+  await page.goto(form);
+  const tabId = await panel.evaluate(
+    async (url) => (await chrome.tabs.query({})).find((tab) => tab.url === url)!.id!,
+    page.url(),
+  );
+  await ui({ type: "TRACK_TAB", tabId });
+  const id = (await state()).applications[0].id;
+  await expect.poll(async () => (await state()).applications[0].status, { timeout: 30_000 }).not.toMatch(/^(inspecting|preparing|filling)$/);
+
+  // Next presses the page's one Continue, and nothing else.
+  await ui({ type: "PRESS_STEP", id, step: "next" });
+  expect(await page.evaluate(() => [(window as any).nexts, (window as any).submitted])).toEqual([1, 0]);
+
+  // Submit is off until the applicant turns it on.
+  await expect(ui({ type: "PRESS_STEP", id, step: "submit", label: "Submit application" })).rejects.toThrow(/Submitting from here is off/);
+  await ui({ type: "SETTINGS", settings: { ...(await state()).settings, submitButton: "on" } });
+
+  // What it would press is shown first, and only that label is pressed.
+  expect((await ui({ type: "STEP_CHECK", id })).submit).toBe("Submit application");
+  await expect(ui({ type: "PRESS_STEP", id, step: "submit" })).rejects.toThrow(/now says "Submit application"/);
+  await expect(ui({ type: "PRESS_STEP", id, step: "submit", label: "Submit" })).rejects.toThrow(/now says "Submit application"/);
+
+  // An empty required field stops it.
+  await page.fill('[name="email"]', "");
+  expect((await ui({ type: "STEP_CHECK", id })).unfinished).toEqual(["Email: empty"]);
+  await expect(ui({ type: "PRESS_STEP", id, step: "submit", label: "Submit application" })).rejects.toThrow(/Finish this step first/);
+  expect(await page.evaluate(() => (window as any).submitted)).toBe(0);
+
+  await page.fill('[name="email"]', "alex@example.test");
+  await ui({ type: "PRESS_STEP", id, step: "submit", label: "Submit application" });
+  expect(await page.evaluate(() => (window as any).submitted)).toBe(1);
+  await page.close();
+});

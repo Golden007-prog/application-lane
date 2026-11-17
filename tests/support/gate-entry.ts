@@ -2,3 +2,4 @@
 // them in a real page (tests/click-gate.test.ts).
 export { clickPointAllowed, enterAllowed, fillClick, pressedControl } from "../../src/engine/page/click-gate";
 export { signatureField } from "../../src/engine/page/signatures";
+export { pressStep, stepControls, stepLabel } from "../../src/engine/page/step-controls";

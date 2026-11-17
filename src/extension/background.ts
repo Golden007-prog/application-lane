@@ -11,6 +11,7 @@ import {
   type Observation,
   type Profile,
   type SignaturePolicy,
+  type StepCheck,
   type Proposal,
   type QueueState,
   type QueueSummaryItem,
@@ -231,6 +232,67 @@ async function unlockEmpty(app: Application) {
     await persist();
     return state;
 }
+// A step's own Next and Submit, found in each frame (STEP_CHECK in
+// content.ts) and pressed only when the applicant asks: the panel's Next
+// step and Submit, lane next and lane submit. A fill never presses them
+// (click-gate.ts). Exactly one of a kind on the page, or none is pressed.
+type StepTarget = { frameId: number; documentId: string; label: string };
+async function checkSteps(app: Application): Promise<{ check: StepCheck; targets: Partial<Record<"next" | "submit", StepTarget>> }> {
+  if (app.tabId === undefined) throw new Error("Its tab is closed. Switch to it first.");
+  if (["inspecting", "preparing", "filling"].includes(app.status) || app.assisting)
+    throw new Error("It is being filled. Try again when it finishes.");
+  type Reply = { documentId: string; foreign: boolean; next?: string; nextCount: number; submit?: string; submitCount: number; blockers: string[]; unfinished: string[] };
+  const replies = (
+    await Promise.all(
+      (await allFrames(app.tabId)).map(async (frame) => {
+        const reply = (await frameCall(app, frame.frameId, { type: "STEP_CHECK" }).catch(() => undefined)) as Reply | undefined;
+        return reply && !reply.foreign ? { ...reply, frameId: frame.frameId } : undefined;
+      }),
+    )
+  ).filter((reply): reply is Reply & { frameId: number } => Boolean(reply));
+  const targets: Partial<Record<"next" | "submit", StepTarget>> = {};
+  const problems: Partial<Record<"next" | "submit", string>> = {};
+  for (const kind of ["next", "submit"] as const) {
+    const name = kind === "next" ? "Next" : "Submit";
+    const count = replies.reduce((total, reply) => total + (kind === "next" ? reply.nextCount : reply.submitCount), 0);
+    const holder = replies.find((reply) => reply[kind]);
+    if (count === 1 && holder) targets[kind] = { frameId: holder.frameId, documentId: holder.documentId, label: holder[kind]! };
+    else problems[kind] = count
+      ? `This page shows ${count} ${name} buttons. Press the right one on the page.`
+      : `No ${name} button found on this page.`;
+  }
+  return {
+    targets,
+    check: {
+      ...(targets.next ? { next: targets.next.label } : { nextProblem: problems.next }),
+      ...(targets.submit ? { submit: targets.submit.label } : { submitProblem: problems.submit }),
+      blockers: [...new Set(replies.flatMap((reply) => reply.blockers))].slice(0, 10),
+      unfinished: replies.flatMap((reply) => reply.unfinished).slice(0, 30),
+      aiFilled: (app.aiFilled || []).map((entry) => `${entry.label}: ${entry.value}`.slice(0, 200)),
+      notes: app.missing.slice(0, 20),
+    },
+  };
+}
+async function pressStepFor(app: Application, step: "next" | "submit", confirmed?: string): Promise<string> {
+  if (step === "next" && state.settings.nextButton === "off")
+    throw new Error("Next step is off. Turn it on under Settings → Processing.");
+  if (step === "submit" && state.settings.submitButton !== "on")
+    throw new Error("Submitting from here is off. Turn it on under Settings → Processing.");
+  const { check, targets } = await checkSteps(app);
+  const target = targets[step];
+  if (!target) throw new Error(step === "next" ? check.nextProblem! : check.submitProblem!);
+  // Submit is pressed only as confirmed: the label the applicant was shown.
+  if ((step === "submit" || confirmed !== undefined) && confirmed !== target.label)
+    throw new Error(`The ${step === "next" ? "Next" : "Submit"} button now says "${target.label}". Check again.`);
+  if (check.blockers.length) throw new Error(check.blockers[0]);
+  if (check.unfinished.length) throw new Error(`Finish this step first: ${check.unfinished.slice(0, 3).join("; ")}.`);
+  await frameCall(app, target.frameId, { type: "PRESS_STEP", documentId: target.documentId, step, label: target.label });
+  app.note = step === "next"
+    ? `Pressed "${target.label}". Choose Fill this step on the next page.`
+    : `Pressed "${target.label}". Mark it submitted once the site confirms.`;
+  await persist();
+  return app.note;
+}
 async function liveCommand(message: { action?: string; applicationId?: string; data?: string }): Promise<string | undefined> {
   // The fixer's "lane own": values on the application's pages that this
   // extension wrote before it kept a record of its writes (ownWrites), so a
@@ -331,6 +393,14 @@ async function liveCommand(message: { action?: string; applicationId?: string; d
     const id = await captureFill(app, app.tabId, "check");
     if (!id) throw new Error("The page shows no form fields to capture.");
     return id;
+  }
+  // lane next / lane submit: the step's own buttons, as the panel's Next
+  // step and Submit. "steps" is what lane submit shows before asking.
+  if (message.action === "steps") return JSON.stringify((await checkSteps(app)).check);
+  if (message.action === "next") return pressStepFor(app, "next");
+  if (message.action === "submit") {
+    if (!message.data) throw new Error("Confirm the Submit button first: lane submit shows it.");
+    return pressStepFor(app, "submit", message.data);
   }
   if (message.action === "fill") {
     if (app.tabId === undefined) throw new Error("Its tab is closed. Switch to it first, then fill.");
@@ -4511,11 +4581,15 @@ async function uiMessage(message: any) {
       generationConcurrency > 4
     )
       throw new Error("Invalid concurrency settings.");
+    const nextButton = ["on", "off"].includes(message.settings.nextButton) ? (message.settings.nextButton as "on" | "off") : state.settings.nextButton;
+    const submitButton = ["on", "off"].includes(message.settings.submitButton) ? (message.settings.submitButton as "on" | "off") : state.settings.submitButton;
     await api("/v1/settings", "PUT", { generationConcurrency, checking });
     state.settings = {
       concurrency, generationConcurrency, checking, prefilled, networkCapture,
       ...(modelFill ? { modelFill } : {}),
       ...(legalQuestions ? { legalQuestions } : {}),
+      ...(nextButton ? { nextButton } : {}),
+      ...(submitButton ? { submitButton } : {}),
     };
     await persist();
     schedule();
@@ -4523,6 +4597,11 @@ async function uiMessage(message: any) {
   }
   const app = state.applications.find((a) => a.id === message.id);
   if (!app) throw new Error("Application not found.");
+  if (message.type === "STEP_CHECK") return (await checkSteps(app)).check;
+  if (message.type === "PRESS_STEP") {
+    await pressStepFor(app, message.step === "submit" ? "submit" : "next", typeof message.label === "string" ? message.label : undefined);
+    return state;
+  }
   if (message.type === "CHECK_FIT") return checkFit(app);
   if (message.type === "DRAFT_DOCUMENTS") return draftDocuments(app);
   if (message.type === "UNRESOLVED_FIELDS") {

@@ -8,6 +8,7 @@ import { pickTdsDate, tdsDateBox } from "../engine/page/tds-date-picker";
 import { loadQuestionnaires, questionnaireUrls, type QuestionnaireAnswers } from "../engine/config/workday-questionnaire";
 import { adapterFor } from "./adapters";
 import { fillClick } from "../engine/page/click-gate";
+import { pressStep, stepControls, stepLabel } from "../engine/page/step-controls";
 import { signatureField, signatureLeftReason, signingAllowed } from "../engine/page/signatures";
 import { redactURL, secretName } from "./workspace";
 import { DRAFT_ONLY_NOTE, draftOnlySite } from "../shared/matching";
@@ -207,6 +208,9 @@ type Command = {
   // What the applicant lets a fill sign (Profile.signatures), on commands
   // that write proposals without the whole profile.
   signatures?: SignaturePolicy;
+  // PRESS_STEP: which control, and its label as the applicant confirmed it.
+  step?: "next" | "submit";
+  label?: string;
   token?: string;
   session?: string;
   startedAt?: number;
@@ -3417,7 +3421,7 @@ if (!window.__applicationLane) {
   async function executeCommand(command: Command): Promise<unknown> {
     // The last line of defence for a draft-only site: whatever asked, this
     // page is not written to, opened or advanced.
-    if (draftOnlySite(location.href) && /^(APPLY|ATTACH|CONFIG_FILL|ADVANCE|REMOVE_ROW|OPTIONS)$/.test(command.type))
+    if (draftOnlySite(location.href) && /^(APPLY|ATTACH|CONFIG_FILL|PRESS_STEP|REMOVE_ROW|OPTIONS)$/.test(command.type))
       throw new Error(DRAFT_ONLY_NOTE);
     if (command.type === "ENGINE_INFO")
       return { version: CONTENT_VERSION, configEngine: configEngineEnabled };
@@ -3824,6 +3828,53 @@ if (!window.__applicationLane) {
       configController.abort();
       configController = new AbortController();
       return inspect();
+    }
+    // Next and Submit are the applicant's own presses, made after they
+    // looked over (and often edited) the page, which pauses its fill: they
+    // check the page themselves rather than the fill's operation.
+    // The step's own Next and Submit (step-controls.ts), for the applicant's
+    // Next step and Submit in the panel or lane next / lane submit: what
+    // this page would press, and what on it is still unfinished. Read only.
+    if (command.type === "STEP_CHECK") {
+      const snapshot = inspect();
+      const controls = stepControls(document, adapterFor(location.href).next || undefined);
+      const label = (kind: "next" | "submit") => (controls[kind].length === 1 ? stepLabel(controls[kind][0]) : undefined);
+      return {
+        documentId,
+        // Bound to another application: never pressed for this one.
+        foreign: Boolean(applicationId && command.applicationId !== applicationId),
+        next: label("next"),
+        nextCount: controls.next.length,
+        submit: label("submit"),
+        submitCount: controls.submit.length,
+        blockers: snapshot.blockers,
+        unfinished: snapshot.fields
+          .filter((f) => (f.required && !f.value) || f.invalid || f.validationWarning)
+          .map((f) => (f.required && !f.value ? `${f.label}: empty` : `${f.label}: ${f.validationWarning || "not accepted"}`).slice(0, 160))
+          .slice(0, 30),
+      };
+    }
+    // Presses the one control STEP_CHECK named, on the same page, only if it
+    // still says what the applicant confirmed and nothing on the step is
+    // left unfinished.
+    if (command.type === "PRESS_STEP") {
+      if (applicationId && command.applicationId !== applicationId) throw new Error("This tab belongs to another application.");
+      if (command.documentId !== documentId) throw new Error("The page changed since it was checked. Check it again.");
+      const kind = command.step === "submit" ? "submit" : "next";
+      const snapshot = inspect();
+      if (snapshot.blockers.length) throw new Error(snapshot.blockers[0]);
+      if (snapshot.fields.some((f) => (f.required && !f.value) || f.invalid || f.validationWarning))
+        throw new Error("Some fields on this step are empty or not accepted. Finish them first.");
+      const controls = stepControls(document, adapterFor(location.href).next || undefined)[kind];
+      if (controls.length !== 1) throw new Error(`This page has ${controls.length || "no"} ${kind === "next" ? "Next" : "Submit"} button${controls.length === 1 ? "" : "s"} to press.`);
+      writing = true;
+      try {
+        expectOwnedActivation(controls[0], "click");
+        pressStep(controls[0], kind, String(command.label || ""));
+      } finally {
+        writing = false;
+      }
+      return { pressed: stepLabel(controls[0]) };
     }
     // Which command, and which check, failed: three Workday fills ended on
     // this with nothing to say why (report 83effc7c).
@@ -4828,21 +4879,6 @@ if (!window.__applicationLane) {
         siteError,
         observation: inspect(),
       };
-    }
-    if (command.type === "ADVANCE") {
-      const snapshot = inspect();
-      if (
-        snapshot.blockers.length ||
-        snapshot.fields.some(
-          (f) => (f.required && !f.value) || f.invalid || f.validationWarning,
-        ) ||
-        !valid(command)
-      )
-        throw new Error("This step needs review.");
-      const next = nextButton();
-      if (!next) throw new Error("No verified non-submitting Next button.");
-      next.click();
-      return { advanced: true };
     }
     throw new Error("Unknown content operation.");
   }

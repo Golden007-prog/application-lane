@@ -101,6 +101,7 @@ const api = <T,>(path: string, method = "GET", body?: unknown) =>
 import { codexEfforts, fixerAgents, type FixerAgent, type FixerSettings } from "../shared/fixer-settings";
 import { devToolsBuild } from "../shared/dev-tools";
 import { storeBuild } from "../shared/store-build";
+import { StepButtons } from "./step-buttons";
 import { describeBuild, extensionBuild, newerBuild, type BuildStamp } from "../shared/build";
 const agentNames: Record<FixerAgent, string> = { claude: "Claude", claude2: "Claude (separate login)", codex: "Codex", endpoint: "OpenAI-compatible endpoint" };
 // Suggestions only: any model name the agent's CLI takes is accepted.
@@ -2072,6 +2073,9 @@ function App() {
                                 Fill this step
                               </button>
                               {fillPrerequisite && <small className="fill-blocker">{fillPrerequisite}</small>}
+                              {!draftOnlySite(app.url) && app.workflowStage !== "submitted" && (
+                                <StepButtons app={app} settings={queue.settings} disabled={busy} send={command} run={action} onState={setQueue} />
+                              )}
                             </>
                           )}
                           {app.workflowStage !== "submitted" && (
@@ -3492,6 +3496,30 @@ function App() {
                     <option value="auto">Fill automatically: AI answers go into the form, marked for you to check</option>
                     <option value="review">Review first: AI drafts, you approve before anything is filled</option>
                     <option value="off">Profile only: fill just what matches my saved details</option>
+                  </select>
+                </label>
+                <label>
+                  Next step button
+                  <select
+                    value={queue.settings.nextButton || "on"}
+                    onChange={(e) =>
+                      setQueue((q) => ({ ...q, settings: { ...q.settings, nextButton: e.target.value === "off" ? "off" : "on" } }))
+                    }
+                  >
+                    <option value="on">Show it: press the page's Next or Continue from the panel</option>
+                    <option value="off">Hide it: I press Next on the page</option>
+                  </select>
+                </label>
+                <label>
+                  Submit button
+                  <select
+                    value={queue.settings.submitButton || "off"}
+                    onChange={(e) =>
+                      setQueue((q) => ({ ...q, settings: { ...q.settings, submitButton: e.target.value === "on" ? "on" : "off" } }))
+                    }
+                  >
+                    <option value="off">Hide it: I submit on the page</option>
+                    <option value="on">Show it: submit from the panel after a summary I confirm</option>
                   </select>
                 </label>
                 <label>

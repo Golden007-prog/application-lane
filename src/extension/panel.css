@@ -2690,3 +2690,19 @@ details.answer-source ul {
     transform: translateX(290%);
   }
 }
+/* Before you submit (step-buttons.tsx): what Submit would press and what is
+   still unfinished or filled by AI. */
+.step-review {
+  flex-basis: 100%;
+  display: grid;
+  gap: 6px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  background: var(--warning-soft);
+  border-radius: 8px;
+  font-size: 13px;
+}
+.step-review ul {
+  margin: 0;
+  padding-left: 18px;
+}

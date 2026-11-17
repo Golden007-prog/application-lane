@@ -480,7 +480,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-17-click-gate-signatures";
+export const CONTENT_VERSION = "2026-11-17-step-buttons";
 export type Proposal = {
   fieldId: string;
   value: string;
@@ -871,6 +871,25 @@ export type Settings = {
   // never answered by the model, listed for the applicant; model: answered
   // like any other question.
   legalQuestions?: "manual" | "model";
+  // The step's own buttons, pressed only when the applicant asks from the
+  // panel or the command line (step-controls.ts); a fill never presses them.
+  // nextButton: Next step (default on). submitButton: Submit, after a
+  // summary to confirm (default off).
+  nextButton?: "on" | "off";
+  submitButton?: "on" | "off";
+};
+// What the applicant is shown before pressing a step's Next or Submit
+// (STEP_CHECK): the control each would press, or why none, and what on the
+// step is unfinished or worth a look.
+export type StepCheck = {
+  next?: string;
+  nextProblem?: string;
+  submit?: string;
+  submitProblem?: string;
+  blockers: string[];
+  unfinished: string[];
+  aiFilled: string[];
+  notes: string[];
 };
 // One application that went in, kept by the backend apart from the list
 // of applications being worked on: removing an application, or archiving it,

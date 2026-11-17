@@ -2,7 +2,7 @@
 
 Application Lane helps you fill out job applications faster without giving up control. It is a browser extension for Chrome (and other Chromium browsers) plus a small program, the backend, that runs on your own computer. Together they fill application forms from your résumé and profile, draft tailored résumés, cover letters and answers, and let you work on several applications at once.
 
-It never submits anything for you. You review every step, press Next yourself, and press Submit yourself.
+It never submits anything on its own. You review every step; Next and Submit are pressed only when you press them, on the page or with the side panel's **Next step** and **Submit…** buttons.
 
 ## Screenshots
 
@@ -47,8 +47,8 @@ Platform notes: [Windows](docs/windows-setup.md) · [macOS](docs/macos-setup.md)
 
 1. Open a job posting or application page. The side panel shows the fields it found. Choose **Track as new** to add it as an application, or attach the tab to an application you already track (for example a login page or an emailed link).
 2. On each form step, choose **Fill this step**. Application Lane fills what it can from your confirmed profile and saved answers and attaches your tailored documents.
-3. Check the page and fix anything you like, then press the site's **Next** or **Continue** button yourself. Repeat on the next step.
-4. Submit the application yourself, then choose **Mark submitted**.
+3. Check the page and fix anything you like, then press the site's **Next** or **Continue** button, or **Next step** on the application's card. Repeat on the next step.
+4. Submit the application on the page, or with **Submit…** on the card once you turn it on (**Settings → Processing**): it first shows the button it will press, anything unfinished and the answers AI filled, and presses only after you confirm. Then choose **Mark submitted** if the site's confirmation was not recognised.
 
 You can fill several applications at the same time; each one runs in its own lane. You can also paste a list of links into **Track application links** to queue them.
 
@@ -64,7 +64,7 @@ You can fill several applications at the same time; each one runs in its own lan
 
 ## What it does not do
 
-- It **never submits** an application and **never clicks Next, Continue or Submit** on its own. Every click a fill makes passes one check that refuses those buttons.
+- It **never submits** an application and **never clicks Next, Continue or Submit** on its own. Every click a fill makes passes one check that refuses those buttons; they are pressed only when you ask, one press per request.
 - It does not sign, initial or tick consent boxes unless you allow it: **Your profile → Signatures** can sign self-identification forms (disability, veteran) or every form, and a separate box allows ticking terms and privacy acknowledgements. Both are off until you turn them on.
 - It does not solve CAPTCHAs or log in for you.
 - It does not invent facts: résumé bullets and saved answers use your own confirmed wording, and drafted text is checked against your profile.
@@ -104,6 +104,8 @@ npm run lane -- status            # applications by stage, and what needs you
 npm run lane -- failures          # fills that failed, and why (--json for scripts)
 npm run lane -- watch             # print each change as it happens
 npm run lane -- fill acme       # "Fill this step" on that application's tab
+npm run lane -- next acme       # press that page's Next or Continue
+npm run lane -- submit acme     # show what Submit would press, then press it once you confirm (when turned on)
 npm run lane -- switch acme     # bring its tab to the front
 npm run lane -- search            # find openings with your saved Find jobs settings
 npm run lane -- search add 1 3    # queue openings by their number
@@ -112,7 +114,7 @@ npm run lane -- ui                # full-screen view: ↑/↓ choose, f fill, s 
 
 If you installed the backend package, the same commands are available as `lane status`, `lane ui` and so on.
 
-An application is named by the short id `status` shows (like `[fa4c3f]`) or by part of its company or title. `fill` does exactly what **Fill this step** does: it never presses Next or Submit.
+An application is named by the short id `status` shows (like `[fa4c3f]`) or by part of its company or title. `fill` does exactly what **Fill this step** does: it never presses Next or Submit. `next` and `submit` press the page's own button only when it has exactly one, and only when nothing required on the step is empty. `submit` is off until **Settings → Processing** turns it on; it prints the button it will press, anything unfinished, the answers AI filled and the fill's notes, then asks before pressing (`--yes` skips the question).
 
 ## Themes and progress
 
