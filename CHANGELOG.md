@@ -4,6 +4,8 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 ## Unreleased
 
+- Eligibility answers are more careful. A list that words its answers as sentences ("Yes, I am a U.S. citizen") gets a plain Yes or No only when the sentence adds nothing the question does not ask. A work-authorization or sponsorship answer is given only for the job's country, and "Do you authorize a background check?" is no longer read as a work-authorization question. With AI filling automatic, questions about identity, work eligibility and pay are drafted for your approval instead of filled.
+
 - Every click a fill makes now passes one check that refuses Submit, Next, Continue and signing controls, including real clicks and Enter presses sent through the debugger.
 - **Next step** and **Submit…** on an application's card, and `lane next` / `lane submit`, press the page's own Next or Submit on request. Submit is off until **Settings → Processing** turns it on, shows the button, anything unfinished and the answers AI filled before it presses, and presses only after you confirm.
 - **Your profile → Signatures** decides what a fill signs: nothing (the new default), self-identification forms, or every form. Before this, Lever's and Workday's self-identification signatures and Tesla's legal acknowledgment were filled without asking; turn the setting on to keep that.

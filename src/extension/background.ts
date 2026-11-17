@@ -44,6 +44,7 @@ import {
   leftReason,
   legalQuestion,
   structuredFallbackField,
+  reviewFirstQuestion,
 } from "../shared/questions";
 import { transitionTiming } from "../shared/timing";
 import { configEngineEnabled } from "../engine/mode";
@@ -3454,6 +3455,12 @@ async function assist(app: Application, tabId: number) {
   }
   const { mode } = modelFills();
   const tried = new Set<string>();
+  // In automatic mode, questions about identity, eligibility and pay are not
+  // filled: they are drafted after the rest, for the applicant to approve
+  // (reviewFirstQuestion).
+  const held = new Set<string>();
+  const holds = (problem: FieldFallbackProblem) =>
+    mode === "auto" && reviewFirstQuestion(`${problem.question || ""} ${problem.label}`);
   let filled = 0;
   let finished = false;
   const idle = () => !app.explicitFill && !activeStatuses.includes(app.status) && app.tabId === tabId;
@@ -3466,8 +3473,9 @@ async function assist(app: Application, tabId: number) {
         const note = `Legal or eligibility question left for you: ${label}`.slice(0, 350);
         if (!app.missing.includes(note)) app.missing.push(note);
       }
+      for (const problem of scanned.problems) if (holds(problem)) held.add(problem.fieldId);
       const ids = scanned.problems
-        .filter((problem) => !tried.has(problem.fieldId))
+        .filter((problem) => !tried.has(problem.fieldId) && !holds(problem))
         .map((problem) => problem.fieldId)
         .slice(0, 100);
       if (!ids.length) break;
@@ -3511,10 +3519,18 @@ async function assist(app: Application, tabId: number) {
       }
     }
     if (mode === "auto") {
-      // Nothing is left to approve: what was filled is listed for checking.
-      if (idle()) await clearFieldFallback(app);
-      if (filled && idle())
-        app.note = `${filled} more field${filled === 1 ? "" : "s"} filled by AI from your saved details. Check the ones listed.`;
+      // What was filled is listed for checking; what was held back is
+      // drafted now and waits in the panel for approval.
+      const waiting = [...held].filter((id) => !tried.has(id)).slice(0, 100);
+      if (idle()) {
+        if (waiting.length) await draftFieldFallback(app, tabId, waiting);
+        else await clearFieldFallback(app);
+      }
+      const parts = [
+        filled ? `${filled} more field${filled === 1 ? "" : "s"} filled by AI from your saved details. Check the ones listed.` : "",
+        waiting.length ? `${waiting.length} answer${waiting.length === 1 ? "" : "s"} about eligibility, identity or pay drafted for you to approve under Unfilled structured fields.` : "",
+      ].filter(Boolean);
+      if (parts.length && idle()) app.note = parts.join(" ");
     } else if (idle()) {
       const questions = (await questionFields(tabId)).fields.filter((field) => !field.value && !field.protected && !leftAsLegal(field.label));
       if (questions.length) await draftAnswers(app, tabId, questions.map((field) => field.id).slice(0, 250)).catch(() => {});

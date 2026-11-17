@@ -1769,11 +1769,14 @@ function ownProposals(fields: Field[], profile: Profile): Proposal[] {
       const standing = standingAnswer(field, profile);
       if (standing?.choices?.length) answer = { ...answer, choices: [...new Set([...(answer.choices || []), ...standing.choices])] };
     }
+    // What the field asks, so a list worded in sentences is read against it
+    // (plainStance, answers.ts).
+    const question = `${field.question || ""} ${field.label}`.trim();
     if (field.options.length) {
       let option: string | undefined;
       let refused = false;
       try {
-        option = pickOption(answer, field.options, (o) => o);
+        option = pickOption({ ...answer, question }, field.options, (o) => o);
       } catch {
         refused = true;
       }
@@ -1783,7 +1786,7 @@ function ownProposals(fields: Field[], profile: Profile): Proposal[] {
       const standing = !option && !special ? standingAnswer(field, profile) : undefined;
       if (standing)
         try {
-          option = pickOption(standing, field.options, (o) => o);
+          option = pickOption({ ...standing, question }, field.options, (o) => o);
         } catch {
           /* still none */
         }
@@ -1818,9 +1821,10 @@ function ownProposals(fields: Field[], profile: Profile): Proposal[] {
       {
         fieldId: field.id,
         ...answer,
+        question,
         expectedValue: field.value,
         revision: field.revision,
-        source: "confirmed-profile",
+        source: "confirmed-profile" as const,
       },
     ];
   });

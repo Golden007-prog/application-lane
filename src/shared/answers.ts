@@ -112,8 +112,28 @@ function seasonOption(value: string, optionText: string): number | undefined {
   return /^(earlier|before)/.test(option[1]) ? (term < asked ? 47 : undefined) : term > asked ? 47 : undefined;
 }
 
+// Whether an option worded as a sentence ("Yes, I am authorized to work in
+// the US") answers a bare Yes or No to this question. Its words after the
+// Yes or No may only say the question again: one that adds a claim the
+// question does not make ("Yes, I am a U.S. citizen" for "Are you authorized
+// to work in the US?", "Yes, with sponsorship") says more than the answer,
+// and is left for the applicant. Without the question, no added claim is
+// taken.
+const claimWord =
+  /^(citizen\w*|permanent|resident\w*|green|visa\w*|1b|opt|cpt|ead|tn|sponsor\w*|transfer\w*|but|however|except|only|future|later|with|without|requir\w*|need\w*|pending|expir\w*|temporary|conditional\w*|currently|now)$/;
+const stemmed = (word: string) => word.replace(/(ing|ed|es|s)$/, "");
+export function plainStance(answer: string, optionText: string, question?: string): boolean {
+  const stance = answer.trim().toLowerCase();
+  if (!/^(yes|no)$/.test(stance) || !new RegExp(`^${stance}\\b`, "i").test(optionText.trim())) return false;
+  const claims = norm(optionText).split(" ").slice(1).filter((word) => claimWord.test(word));
+  if (!claims.length) return true;
+  if (!question) return false;
+  const asked = new Set(norm(question).split(" ").map(stemmed));
+  return claims.every((word) => asked.has(stemmed(word)));
+}
+
 export function rankOption(
-  proposal: { value: string; choices?: string[]; decline?: boolean; numeric?: number; scale?: number },
+  proposal: { value: string; choices?: string[]; decline?: boolean; numeric?: number; scale?: number; question?: string },
   optionText: string,
 ): number | undefined {
   const text = norm(optionText);
@@ -199,9 +219,8 @@ export function rankOption(
   // A plain Yes or No also answers a list that words it as a sentence
   // ("Yes, I am authorized to work…"). Two options beginning the same way
   // tie, and a tie is never chosen.
-  if (/^(yes|no)$/i.test(proposal.value.trim()) &&
-      !Object.values(qualifiedBinarySentences).some(sentences => sentences.some(sentence => norm(sentence) === text)) &&
-      new RegExp(`^${proposal.value.trim()}\\b`, "i").test(optionText.trim())) return 45;
+  if (!Object.values(qualifiedBinarySentences).some(sentences => sentences.some(sentence => norm(sentence) === text)) &&
+      plainStance(proposal.value, optionText, proposal.question)) return 45;
   if (proposal.decline && declines.test(text)) return 50;
   // A date as a list's academic season (one employer's "Spring 2027" for a May
   // 2027 graduation): January to May is spring, June to August

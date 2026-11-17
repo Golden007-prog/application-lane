@@ -10,9 +10,11 @@ import {
   fallbackValues,
   matchOption,
   relatedFieldsOfStudy,
+  savedAnswer,
   selectorValues,
   type ValueContext,
 } from "../values";
+import { authorizationAnswer } from "../../shared/authorization";
 import { normalize, type Profile } from "../../shared/model";
 import { pickOption } from "../../shared/answers";
 import { skillNames } from "../../shared/skill-names";
@@ -377,6 +379,7 @@ async function defaultExecute(request: MethodRequest): Promise<boolean> {
         .filter((item) => !item.disabled && !placeholderSelectOption(item))
         .map((item) => ({ label: item.label, value: item.value })),
       globals,
+      questionText(element),
     );
     if (!option) return false;
     Object.getOwnPropertyDescriptor(
@@ -631,6 +634,19 @@ function questionText(element: Element): string {
   return parts.filter(Boolean).join(" ").replace(/\s+/g, " ").trim();
 }
 
+// A work-authorization or sponsorship answer is the job's country's
+// (values.ts). A question naming another country, or several, has its own
+// answer, and one the profile does not hold is left: "Are you authorized to
+// work in the UK?" on a US job was given the US answer. Says why, or nothing.
+function authorizationElsewhere(key: string, element: Element, profile: Profile): string | undefined {
+  const base = key.replace(/_[234]$/, "");
+  if (!/^(work_auth|sponsorship)$/.test(base) || savedAnswer(key, profile)) return;
+  const field = base === "work_auth" ? "workAuthorization" : "sponsorship";
+  const asked = questionText(element);
+  if (asked && authorizationAnswer(profile, asked, field) !== authorizationAnswer(profile, "", field))
+    return "This question asks about another country than the one your answer is for.";
+}
+
 // "Do you require work authorization?" and "Do you need visa sponsorship?"
 // ask whether the applicant needs sponsorship. Answering either from the
 // work-authorization answer states the opposite of the truth.
@@ -670,7 +686,9 @@ function fallbackLabel(key: string): RegExp | undefined {
     start_year: /^(start|from)( date)? year$/i,
     state: /^(state|province|state province)$/i,
     title: /^(job )?(title|position)$/i,
-    work_auth: /authoriz|eligible to work/i,
+    // About working there, not any authorization: "Do you authorize a
+    // background check?" got the work-authorization answer.
+    work_auth: /\bauthori[sz]ed to (work|be employed|accept employment)\b|\bwork authori[sz]ation\b|\beligible to work\b|\bright to work\b/i,
     gender: /^(sex|gender)\b|gender identity/i,
     ethnicity: /race|ethnic/i,
     veteran: /veteran/i,
@@ -1116,6 +1134,7 @@ async function viaReactSelect(
         values,
         labels.map((label) => ({ label, value: label })),
         globals,
+        questionText(element),
       )?.label,
     values,
   );
@@ -1171,6 +1190,7 @@ async function fillFallback(
         value: candidate.textContent?.trim() || "",
       })),
       globals,
+      questionText(element),
     );
     const selected = option
       ? available.find(
@@ -1232,6 +1252,7 @@ async function fillFallback(
           value: candidate.textContent?.trim() || "",
         })),
         globals,
+        questionText(element),
       );
       const selected = option
         ? available.find(
@@ -1295,6 +1316,7 @@ async function fillFallback(
             "",
         })),
         globals,
+        questionText(element),
       );
       return option
         ? available.find(
@@ -2822,6 +2844,12 @@ export async function interpretConfig(
         lastStatus = "skipped";
         continue;
       }
+      const otherCountry = authorizationElsewhere(key, element, profile);
+      if (otherCountry) {
+        lastReason = otherCountry;
+        lastStatus = "skipped";
+        continue;
+      }
       // Leave sponsorship-worded questions to the sponsorship key, which owns
       // that answer; filling them from the authorization answer inverts them.
       if (
@@ -3312,7 +3340,10 @@ export async function interpretConfig(
     }
     if (!completed) {
       const values = fallbackValues(key, profile, globals, options.valueContext);
-      const element = values.length ? labeledFallback(key, context) : undefined;
+      const found = values.length ? labeledFallback(key, context) : undefined;
+      const otherCountry = found && authorizationElsewhere(key, found, profile);
+      if (otherCountry) lastReason = otherCountry;
+      const element = otherCountry ? undefined : found;
       // A street box already holding the saved street (written "East" for the
       // saved "E.") is the answer: rewriting it only risks the site's reset.
       if (element && key === "address" && values.some((value) => sameStreet(textValue(element), value))) {

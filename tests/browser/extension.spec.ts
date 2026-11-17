@@ -21235,3 +21235,66 @@ test("Submit finds the page's button on a tab whose script is gone, as after an 
   release();
   await page.close();
 });
+
+// Automatic AI filling still leaves a question about identity, eligibility
+// or pay to the applicant: its suggestion is drafted for approval, while the
+// other fields are filled.
+test("automatic AI filling drafts a military-service question for approval and fills the rest", async () => {
+  const asked: string[] = [];
+  const providerServer = createServer(async (req, res) => {
+    const chunks: Buffer[] = [];
+    for await (const chunk of req) chunks.push(chunk);
+    const input = JSON.parse(JSON.parse(Buffer.concat(chunks).toString()).messages[1].content);
+    const suggestions = (input.fields || []).map((candidate: { id: string; label: string }) => (asked.push(candidate.label), candidate)).map((candidate: { id: string; label: string }) =>
+      /school attended/i.test(candidate.label)
+        ? { fieldId: candidate.id, value: "Michigan State University", sourceIds: ["education.1"] }
+        : /military/i.test(candidate.label)
+          ? { fieldId: candidate.id, value: "Army", sourceIds: ["education.1"] }
+          : { fieldId: candidate.id, skip: "Not in the saved details." });
+    res.writeHead(200, { "Content-Type": "application/json" });
+    res.end(JSON.stringify({ choices: [{ message: { content: JSON.stringify({ suggestions }) } }] }));
+  });
+  providerServer.listen(0, "127.0.0.1");
+  await once(providerServer, "listening");
+  try {
+    appConfig.endpoint = `http://127.0.0.1:${(providerServer.address() as { port: number }).port}/v1`;
+    await ui({
+      type: "API",
+      path: "/v1/profile",
+      method: "PUT",
+      body: {
+        ...profile,
+        education: [{ organization: "Michigan State University", title: "Bachelor of Science", fieldOfStudy: "Computer Science", startDate: "2022-08", endDate: "2026-05", location: "East Lansing, Michigan" }],
+      },
+    });
+    await ui({ type: "SETTINGS", settings: { concurrency: 4, generationConcurrency: 2, modelFill: "auto", legalQuestions: "manual" } });
+    await panel.reload();
+    await context.route(`${talNetOrigin}/ai-held`, (route) =>
+      route.fulfill({
+        contentType: "text/html",
+        body: `<!doctype html><title>AI held</title><main><h1>Application</h1><form>
+          <label for="email">Email</label><input id="email" type="email" required>
+          <label for="school">School Attended</label><input id="school" required>
+          <label for="branch">Branch of military service</label><input id="branch" required>
+          <button type="submit">Submit application</button></form></main>`,
+      }),
+    );
+    const page = await context.newPage();
+    await page.goto(`${talNetOrigin}/ai-held`);
+    const tabId = (await panel.evaluate(async () => chrome.tabs.query({}))).find((tab) => tab.url === page.url())!.id!;
+    await ui({ type: "TRACK_ITEMS", items: [{ url: page.url(), tabId }] });
+    await ui({ type: "FILL_STEP", id: (await state()).applications[0].id, tabId });
+    const app = async () => (await state()).applications[0];
+    await expect(page.locator("#school")).toHaveValue("Michigan State University", { timeout: 30000 });
+    // The military-service question's suggestion waits in the panel, unfilled.
+    await expect.poll(async () => (await app()).note || "", { timeout: 30000 }).toContain("drafted for you to approve");
+    expect(Boolean((await app()).fieldFallbackSession?.jobId)).toBe(true);
+    await expect(page.locator("#branch")).toHaveValue("");
+    expect(((await app()).aiFilled || []).map((entry: { label: string }) => entry.label)).not.toContain("Branch of military service");
+    // It was asked once, for review, after the fill's own pass.
+    expect(asked.filter((label) => label === "Branch of military service")).toHaveLength(1);
+    await page.close();
+  } finally {
+    providerServer.close();
+  }
+});

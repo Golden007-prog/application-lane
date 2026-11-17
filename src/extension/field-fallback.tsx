@@ -277,7 +277,13 @@ export function FieldFallback({
           Scan remaining fields
         </button>
       </div>
-      {autoFill && !askAgain && !session ? (
+      {autoFill && session ? (
+        <p>
+          AI drafted these answers about eligibility, identity or pay, and
+          left them for you: a wrong one misstates you on the form. Check each
+          against its source, then fill the ones that are right.
+        </p>
+      ) : autoFill && !askAgain && !session ? (
         <p>
           AI already looked at these and found nothing in your saved details
           to answer them. Add what they ask to your profile, and AI can try

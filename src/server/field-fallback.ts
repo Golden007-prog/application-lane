@@ -400,7 +400,7 @@ export async function writeFieldFallback(
     drafts,
     warnings: [
       ...cliNotice(config, exchange),
-      "AI suggestions were not filled automatically. Verify every value and its cited source before filling.",
+      "Check every suggested value and its cited source before filling it.",
     ],
   };
 }

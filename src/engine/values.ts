@@ -1,6 +1,6 @@
 import type { GlobalConfig, JsonValue, SelectorConfig } from "./config/schema";
 import { normalize, type Profile } from "../shared/model";
-import { canonicalAnswer, rankOption, type ChoiceField } from "../shared/answers";
+import { canonicalAnswer, plainStance, rankOption, type ChoiceField } from "../shared/answers";
 import { schoolNames } from "../shared/schools";
 import { degreeAliases, graduated, highestRow, studying } from "../shared/education";
 import { askedCountry, authorizationAnswer, jobCountry } from "../shared/authorization";
@@ -50,7 +50,7 @@ const unique = (values: string[]) => [
   ...new Set(values.map((value) => value.trim()).filter(Boolean)),
 ];
 
-function savedAnswer(key: string, profile: Profile): string | undefined {
+export function savedAnswer(key: string, profile: Profile): string | undefined {
   const wanted = normalize(key.replaceAll("_", " "));
   const exact = profile.answers.find(
     ({ question }) => normalize(question) === wanted,
@@ -59,7 +59,9 @@ function savedAnswer(key: string, profile: Profile): string | undefined {
   const patterns: Record<string, RegExp> = {
     source: /how did you hear|hear about (us|this|the)/i,
     sponsorship: /sponsor|visa sponsorship/i,
-    work_auth: /authoriz|eligible to work/i,
+    // About working there: a saved "Do you authorize a background check?"
+    // is not one.
+    work_auth: /\bauthori[sz]ed to (work|be employed|accept employment)\b|\bwork authori[sz]ation\b|\beligible to work\b|\bright to work\b/i,
   };
   const pattern = patterns[baseKey(key)];
   // A saved authorization or sponsorship answer is about the country its
@@ -734,6 +736,9 @@ export function matchOption(
   requested: string[],
   options: OptionValue[],
   globals: GlobalConfig,
+  // The question the list answers: a sentence option answers a bare Yes or
+  // No only when it says no more than that (plainStance, answers.ts).
+  question?: string,
 ): OptionValue | undefined {
   const values = unique(requested);
   const aliases = expandAliases(values.filter((value) => !/^(yes|no|true|false)$/i.test(value.trim())), globals).filter(
@@ -783,7 +788,7 @@ export function matchOption(
     // and was taken for it (one employer's Veteran Status).
     (option, value) => /^(yes|no)$/i.test(value.trim()) &&
       !/^(no selection|none selected|no answer)$/i.test(normalize(option.label)) &&
-      new RegExp(`^${value.trim()}\\b`, "i").test(option.label.trim()),
+      plainStance(value, option.label, question),
   ];
   const ordered = [...values, ...aliases];
   for (const [index, stage] of stages.entries()) {

@@ -119,11 +119,13 @@ After **Fill this step**, **Unfilled structured fields** lists empty fields your
 
 **Settings → AI filling** decides what **Fill this step** lets the model do:
 
-- *Fill automatically* (default): writes long answers and, for fields the rules did not recognise, values mapped from your saved details; the card lists them under "Filled by AI: check these".
+- *Fill automatically* (default): writes long answers and, for fields the rules did not recognise, values mapped from your saved details; the card lists them under "Filled by AI: check these". Questions about who you are (equal-opportunity questions), whether you may work there, and pay are the exception: AI drafts its answers to them after the fill, and they wait under **Unfilled structured fields** for you to approve.
 - *Review first*: fills only what the rules match and leaves drafts in the panel for approval.
 - *Profile only*: never calls the model during a fill.
 
 **Legal and eligibility questions** (a conviction, a clearance, a relative at the company) are left for you unless **Your profile → Legal and eligibility details** answers them. The final Submit is always yours. Signatures and consent boxes are yours too unless you allow them under **Your profile**: **Signatures** can sign the name and date on self-identification forms (disability, veteran) or every form including attestations, and a separate box lets terms, privacy and certification boxes be ticked. A signature typed for you is a legal signature; check the form before you submit it.
+
+Answers your profile gives are matched to the site's wording, with two limits. A list that words its answers as sentences gets your Yes or No only when the sentence says no more than the question: "Yes, I am a U.S. citizen" is not chosen for a plain Yes to "Are you authorized to work in the United States?", and is left for you. And a work-authorization or sponsorship answer is for the job's country: a question about another country is left unless your profile has an entry for it.
 
 ## Next step and Submit
 

@@ -480,7 +480,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-17-invisible-captcha-badge";
+export const CONTENT_VERSION = "2026-11-17-eligibility-answers";
 export type Proposal = {
   fieldId: string;
   value: string;
@@ -493,6 +493,10 @@ export type Proposal = {
   // The scale a GPA is on (4 for 3.84): a band whose figures go past it is
   // another scale's and is never chosen (Oracle's "Below 50" for 3.84).
   scale?: number;
+  // The question the field asks: a list worded in sentences ("Yes, I am a
+  // U.S. citizen") answers a bare Yes or No only when it says no more than
+  // that (plainStance, answers.ts).
+  question?: string;
   expectedValue: string;
   revision: number;
   source: string;

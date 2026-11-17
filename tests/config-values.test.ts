@@ -224,7 +224,10 @@ test("option matching never infers names from contained words", () => {
     ),
     undefined,
   );
-  assert.deepEqual(matchOption(["No"], [{ label: "No, I do not require sponsorship", value: "n" }], globals), { label: "No, I do not require sponsorship", value: "n" });
+  assert.deepEqual(matchOption(["No"], [{ label: "No, I do not require sponsorship", value: "n" }], globals, "Will you require visa sponsorship?"), { label: "No, I do not require sponsorship", value: "n" });
+  // A sentence claiming more than the question asks is not a bare answer.
+  assert.equal(matchOption(["No"], [{ label: "No, I do not require sponsorship", value: "n" }], globals), undefined);
+  assert.equal(matchOption(["Yes"], [{ label: "Yes, I am a U.S. citizen", value: "c" }, { label: "No", value: "n" }], globals, "Are you authorized to work in the US?"), undefined);
   assert.equal(matchOption(["Yes"], [{ label: "Yes, citizen", value: "a" }, { label: "Yes, visa", value: "b" }], globals), undefined);
   assert.equal(matchOption(["No"], [{ label: "Norway", value: "NO" }], globals), undefined);
 });

@@ -524,6 +524,7 @@ test("GPA, internships, pronouns and orientation match each portal's wording", (
       value: "3.62",
       numeric: 3.62,
       scale: 4,
+      question: "What is your GPA?",
       expectedValue: "",
       revision: 1,
       source: "confirmed-profile",
@@ -1275,9 +1276,18 @@ test("an abbreviation inside a question does not cut it, and Yes or No reach a s
   assert.equal(ask("Will you now, or in the future, require sponsorship (i.e. H-1B visa, etc.) to legally work in the US?"), "No");
   const pick = (value: string, options: string[]) => pickOption({ value }, options, (o) => o);
   assert.equal(pick("Yes", ["Yes, I am authorized to work in the United States", "No, I am not"]), "Yes, I am authorized to work in the United States");
-  assert.equal(pick("No", ["Yes", "No - I do not require sponsorship"]), "No - I do not require sponsorship");
-  // Two "Yes…" options are two answers: neither is chosen.
-  assert.throws(() => pick("Yes", ["Yes, as a citizen", "Yes, on a visa", "No"]));
+  // A sentence that adds a claim answers a bare Yes or No only when the
+  // question makes that claim itself.
+  const asked = (value: string, question: string, options: string[]) => pickOption({ value, question }, options, (o) => o);
+  assert.equal(asked("No", "Will you require sponsorship?", ["Yes", "No - I do not require sponsorship"]), "No - I do not require sponsorship");
+  assert.equal(pick("No", ["Yes", "No - I do not require sponsorship"]), undefined);
+  assert.equal(asked("Yes", "Are you legally authorized to work in the United States?", ["Yes, I am a U.S. citizen", "No"]), undefined);
+  assert.equal(asked("Yes", "Are you legally authorized to work in the United States?", ["Yes, with sponsorship", "No"]), undefined);
+  assert.equal(asked("Yes", "Will you now or in the future require visa sponsorship?", ["Yes, I will require sponsorship", "No"]), "Yes, I will require sponsorship");
+  // Two "Yes…" options are two answers: neither is chosen. (Ones that add a
+  // claim, a citizen or a visa, are not a bare Yes at all.)
+  assert.equal(pick("Yes", ["Yes, as a citizen", "Yes, on a visa", "No"]), undefined);
+  assert.throws(() => pick("Yes", ["Yes, I am authorized", "Yes, I am eligible", "No"]));
   assert.equal(pick("Yes", ["Yesterday", "Never"]), undefined);
   // A report (Greenhouse): one school listed twice, with a hyphen
   // and with a long dash. That is one answer; the same text twice is not.
@@ -1400,7 +1410,9 @@ test("late dropdown options cannot add visa or future facts to a bare saved bina
     assert.equal(pickOption({ value: binary, choices: [sentence] }, [sentence], option => option), sentence);
   }
   assert.equal(pickOption({ value: "Yes" }, ["Yes, I am authorized to work in the United States"], option => option), "Yes, I am authorized to work in the United States");
-  assert.equal(pickOption({ value: "No" }, ["No, I do not require sponsorship"], option => option), "No, I do not require sponsorship");
+  assert.equal(pickOption({ value: "No", question: "Do you require sponsorship?" }, ["No, I do not require sponsorship"], option => option), "No, I do not require sponsorship");
+  // Without the question, a sentence that adds a claim is not taken.
+  assert.equal(pickOption({ value: "No" }, ["No, I do not require sponsorship"], option => option), undefined);
 });
 
 // Reports on two Ashby forms.
