@@ -5,7 +5,7 @@ import { sectionFor, writable } from "../semantics";
 import { type Proposal } from "../../shared/model";
 import { cs } from "./state";
 import { addLock, documentId, fieldLabel, lockOrigins, lockedLabels, nodeRecords, records, trustedKeyEvents, userAttention } from "./tracking";
-import { Command, RecordEntry, ownKeysNow } from "./core";
+import { Command, RecordEntry, ownKeysOn } from "./core";
 import { inspect } from "./inspect";
 import { clearPendingWrites, elementLockKeys, valueOf } from "./controls";
 
@@ -18,7 +18,7 @@ export const editingTarget = (entry: EventTarget) =>
     ));
 export function human(event: Event) {
   if (cs.writing && !event.isTrusted) return;
-  if (event.isTrusted && ownKeysNow() && ["keydown", "keyup", "keypress", "beforeinput", "input", "change"].includes(event.type)) return;
+  if (event.isTrusted && ownKeysOn(event) && ["keydown", "keyup", "keypress", "beforeinput", "input", "change"].includes(event.type)) return;
   // Our own real keystrokes (CDP) are trusted, so this is the one case where
   // a trusted event is not the user's. Telling them apart is safe because we
   // only type while the page lacks the user's attention (no focus, or no

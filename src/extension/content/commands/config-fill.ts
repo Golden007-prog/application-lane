@@ -55,6 +55,15 @@ for (let round = 0, waitedLate = false; round < 4 && !cs.paused; round++) {
   await pause(300);
 }
 inspect();
+// A pass that threw or ran out of time is not the step's answer: the next
+// time this fill asks (the page changed, a later frame), it runs once more,
+// rather than returning what it left. Once: a site slow enough to time out
+// twice is left to the general fill.
+const retryOnce = () => {
+  if (cs.configRetried === pass) return;
+  cs.configRetried = pass;
+  cs.configPass = "";
+};
 const signal = AbortSignal.any([
   cs.configController.signal,
   // Long forms (iCIMS rows searched one dropdown at a time) need it.
@@ -547,8 +556,11 @@ const result = await fillDocument(command.profile, {
 }, command.fieldId ? records.get(command.fieldId)?.element : undefined).then((result) => {
   cs.configCautions = (result.statuses as { key: string; status: string; caution?: string }[]).flatMap((status) =>
     status.status === "filled" && status.caution ? [{ key: status.key, status: "filled" as const, caution: status.caution }] : []);
+  // Out of time (not stopped by the applicant): tried again, once.
+  if (signal.aborted && !cs.paused) retryOnce();
   return result;
 }).catch((error) => {
+  retryOnce();
   if (!valid(command)) throw error;
   return {
     statuses: [

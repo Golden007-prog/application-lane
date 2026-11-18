@@ -12,6 +12,14 @@ import globalsData from "./config/globals.json" with { type: "json" };
 import { isFluent, levelChoices, profileLanguages } from "../shared/languages";
 import { allRegions, countryCode, countryNamesOf, placeCountry, regionsOf, type Region } from "../shared/geography";
 
+// Whether a job or school is the applicant's current one: as they marked it,
+// else by having no end date. One rule for the site rules ("I currently work
+// here") and for the general fill's check of what a site put there
+// (rowHolds), which disagreed when a current job had an expected end date.
+export function currentRow(row: { current?: boolean; endDate?: string }): boolean {
+  return row.current !== undefined ? row.current : !row.endDate;
+}
+
 export type ValueContext = {
   collection?: "education" | "experience" | "references" | "languages" | "websites";
   index?: number;
@@ -152,7 +160,7 @@ function historyValue(
   if (key === "description_stripped") return row.details.replace(/\s*;\s*/g, ", ");
   if (/^(description|details|responsibilities)$/.test(key))
     return row.details;
-  if (key === "currently_working") return row.current !== undefined ? (row.current ? "Yes" : "No") : row.endDate ? "No" : "Yes";
+  if (key === "currently_working") return currentRow(row) ? "Yes" : "No";
   // Graduated only once the end date has passed; a degree ending in 2027 is
   // still in progress. A school with neither an end date nor "still
   // studying" says nothing.

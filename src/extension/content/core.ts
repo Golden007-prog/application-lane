@@ -6,8 +6,13 @@ import { type Proposal, type Artifact, type Profile, type SignaturePolicy } from
 import { cs } from "./state";
 
 export const ownKeysNow = () => cs.keysInFlight > 0 || performance.now() < cs.keysSettleUntil;
+// Whether an event could be one of the extension's own real keystrokes: while
+// they are being sent (and briefly after), and only on the element they are
+// sent to. The same keys anywhere else are the applicant's.
+export const ownKeysOn = (event: Event) => ownKeysNow() && Boolean(cs.keysTarget) && event.composedPath().includes(cs.keysTarget!);
 export const requestTrustedType: typeof sendTrustedKeys = async (...args) => {
   cs.keysInFlight++;
+  cs.keysTarget = args[0];
   try {
     return await sendTrustedKeys(...args);
   } finally {

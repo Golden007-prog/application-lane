@@ -58,3 +58,23 @@ test("a row is known by its own school, not by a school typed in its 'not listed
   assert.equal(rowHolds(row[1], row, profile), false);
   assert.equal(rowHolds(row[2], row, profile), true);
 });
+
+// A job marked current with an expected end date: the site rules tick "I
+// currently work here" for it, and the general fill's check agrees (it used
+// to read only the missing end date, and flagged the site's tick).
+test("the current-job box is read by one rule: the row's own mark, else no end date", async () => {
+  const { currentRow } = await import("../src/engine/values");
+  assert.equal(currentRow({ current: true, endDate: "2027-06" }), true);
+  assert.equal(currentRow({ current: false, endDate: "" }), false);
+  assert.equal(currentRow({ endDate: "" }), true);
+  assert.equal(currentRow({ endDate: "2024-06" }), false);
+  const working = profileSchema.parse({
+    ...profile,
+    education: [],
+    work: [{ organization: "Contoso Analytics", title: "Data Analyst", startDate: "2024-01", endDate: "2027-06", current: true, location: "", details: "" }],
+  });
+  const box = (value: string) => ({ id: "current", label: "I currently work here", kind: "checkbox", value, required: false, options: [], revision: 1, protected: false, section: "Work Experience", index: 0, siteValue: true }) as Field;
+  const employer = { ...box(""), id: "employer", label: "Company", kind: "text", value: "Contoso Analytics" } as Field;
+  assert.equal(rowHolds(box("yes"), [box("yes"), employer], working), true);
+  assert.equal(rowHolds(box("no"), [box("no"), employer], working), false);
+});

@@ -31,6 +31,7 @@
 // Needs the GitHub CLI (gh), signed in: it reads the issues and posts replies.
 
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { lstat, mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
@@ -441,6 +442,35 @@ export function checkSummary(text: string) {
   return { ...result.data, title: oneLine(result.data.title) };
 }
 
+// What a patch adds under src/ that could send something somewhere, named in
+// the pull request for its reviewer: a web address's host, a network call,
+// code built from text, or a Chrome API that reads the applicant's browser.
+// Tests are left out (their fixtures name hosts of their own).
+export function riskyAdditions(patch: string): string[] {
+  const found = new Set<string>();
+  let file = "";
+  for (const line of patch.split("\n")) {
+    const header = line.match(/^\+\+\+ b\/(\S+)/);
+    if (header) {
+      file = header[1];
+      continue;
+    }
+    if (!file.startsWith("src/") || !line.startsWith("+") || line.startsWith("+++")) continue;
+    for (const match of line.matchAll(/\bhttps?:\/\/([a-z0-9.-]+)/gi))
+      if (!/^(localhost|127\.0\.0\.1|[\w.-]*\.(test|example|invalid))$/i.test(match[1])) found.add(`a web address on ${match[1].toLowerCase()} (${file})`);
+    for (const [pattern, what] of [
+      [/\bfetch\s*\(/, "a fetch call"],
+      [/\bXMLHttpRequest\b/, "an XMLHttpRequest"],
+      [/\bWebSocket\b/, "a WebSocket"],
+      [/\bsendBeacon\b/, "a sendBeacon call"],
+      [/\beval\s*\(|\bnew Function\s*\(/, "code built from text (eval or new Function)"],
+      [/\bchrome\.(cookies|history|downloads|identity|webRequest|permissions|bookmarks)\b/, "a sensitive Chrome API"],
+    ] as const)
+      if (pattern.test(line)) found.add(`${what} (${file})`);
+  }
+  return [...found].slice(0, 20);
+}
+
 // The patch, on a branch of its own from main in a worktree of its own (the
 // checkout is not touched), committed with the leak check's hooks, pushed,
 // and offered as a pull request.
@@ -456,6 +486,7 @@ function openPullRequest(number: number, patchFile: string, summary: ReturnType<
     const inTree = (args: string[]) =>
       execFileSync("git", ["-C", worktree, ...args], { encoding: "utf8", stdio: ["ignore", "pipe", "inherit"], env: { ...process.env, LANE_DATA_DIR: dataDirectory } });
     inTree(["apply", "--index", "--whitespace=nowarn", patchFile]);
+    const risky = riskyAdditions(readFileSync(patchFile, "utf8"));
     const body = `${summary.description}\n\n${summary.test ? `Test: ${summary.test}${summary.failedWithout ? " (fails without the fix)" : ""}\n\n` : ""}Fixes #${number}`;
     inTree(["commit", "-q", "-m", summary.title, "-m", body, "-m", reportTrailer(number)]);
     inTree(["push", "-q", "-f", "-u", "origin", branch]);
@@ -463,7 +494,8 @@ function openPullRequest(number: number, patchFile: string, summary: ReturnType<
     const existing = gh(["pr", "list", "--repo", REPORT_REPOSITORY, "--head", branch, "--state", "open", "--json", "url", "--jq", ".[0].url"]).trim();
     const url =
       existing ||
-      gh(["pr", "create", "--repo", REPORT_REPOSITORY, "--base", "main", "--head", branch, "--title", summary.title, "--body", `${body}\n\nMade by the isolated session from a report shared on GitHub. **Review before merging**: the report came from outside, and this change has not been run on a live page.`]).trim();
+      // A draft: nothing from outside is one click from merging.
+      gh(["pr", "create", "--draft", "--repo", REPORT_REPOSITORY, "--base", "main", "--head", branch, "--title", summary.title, "--body", `${body}\n\nMade by the isolated session from a report shared on GitHub. **Review before merging**: the report came from outside, and this change has not been run on a live page.${risky.length ? `\n\n**Check these additions closely**, which could send something somewhere:\n${risky.map((item) => `- ${item}`).join("\n")}` : ""}`]).trim();
     return { commit, url };
   } finally {
     git(["worktree", "remove", "-f", worktree]);

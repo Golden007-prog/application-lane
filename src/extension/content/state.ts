@@ -11,6 +11,8 @@ export const cs = {
   // on "From: Month" after a window switch, and on its export-control list).
   keysInFlight: 0,
   keysSettleUntil: 0,
+  // The element the extension's own real keys go to (requestTrustedType).
+  keysTarget: undefined as Element | undefined,
   wakePort: undefined as chrome.runtime.Port | undefined,
   wakeCount: 0,
   fileControls: new Map<HTMLElement, ReturnType<typeof configuredFileControls>[number]>(),
@@ -34,6 +36,8 @@ export const cs = {
   stopRecording: undefined as ReturnType<typeof startRecorder> | undefined,
   recordingSession: "",
   configPass: "",
+  // The pass already tried a second time after it failed or ran out of time.
+  configRetried: "",
   // The cautions of the last pass (a closest pick): a repeat of the pass
   // skips its work, and without them the review list would lose them.
   configCautions: [] as { key: string; status: "filled"; caution: string }[],

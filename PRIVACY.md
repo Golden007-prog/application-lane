@@ -68,6 +68,7 @@ Nothing else is sent anywhere. There is no update check, crash reporting or usag
 - **tabs, webNavigation, scripting:** to find and fill forms in the tabs you track, and to follow multi-step applications.
 - **sidePanel:** to show the side panel.
 - **alarms:** to resume queued work reliably.
+- **clipboardRead:** for the issue report's **Paste image** button, which reads a screenshot you copied. The clipboard is read only when you press it.
 - **Access to `127.0.0.1`:** to talk to the backend on your computer.
 - **Optional site access:** requested per site, only when you track an application there.
 - **debugger** (not in the Chrome Web Store build): to type real keystrokes into certain date fields, and for opt-in network capture. Chrome shows a notice while it is in use.

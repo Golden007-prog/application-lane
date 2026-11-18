@@ -21,7 +21,7 @@ Application Lane has two parts that hold sensitive data: the browser extension a
 - It listens on **`127.0.0.1:4318` only**, never on other network interfaces.
 - The **Host header** must be `127.0.0.1:<port>`. Requests addressed to any other name are rejected, which defeats DNS-rebinding attacks from web pages.
 - Only **`chrome-extension://` origins** are accepted, and once paired, only the **paired extension's ID**. Ordinary web pages can never call the backend. Requests with no Origin header (the local `lane` command line) must still carry the token.
-- Every request needs a **bearer token** (64 hex characters), compared in constant time.
+- Every request needs a **bearer token** (64 hex characters), compared in constant time, except the pairing handshake: `POST /v1/hello` (whether pairing is open) and `POST /v1/pair/request` (exchanges the pairing code for the token), which accept only a `chrome-extension://` origin; and the browser's CORS preflight (`OPTIONS`), which carries nothing.
 - The configuration file holding the token and any API key is written with **owner-only permissions** (mode `0600`; the data folder `0700`). Windows does not enforce these modes, so there the file is protected only by the user account.
 - Provider API keys stay in the backend; they never reach page scripts or extension storage.
 - Drafting CLIs (Claude Code, Codex) are run as single locked-down turns with no tools, hooks, MCP servers or web search, from an empty temporary folder.

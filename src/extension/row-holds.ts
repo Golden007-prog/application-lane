@@ -1,4 +1,5 @@
 import { normalize, type Field, type Profile } from "../shared/model";
+import { currentRow } from "../engine/values";
 
 // A value in a job's or school's row that the profile's own row holds,
 // though no rule answers it: a Workday job's Month and Year, its
@@ -28,7 +29,7 @@ export function rowHolds(field: Field, fields: Field[], profile: Profile): boole
   const value = /^\d{1,2}$|^\d{4}$/.test(raw) ? raw : normalize(field.valueText || field.value);
   if (!row || !value) return false;
   if (field.kind === "checkbox")
-    return /\bcurrent/.test(normalize(field.label)) && (value === "yes") === !row.endDate;
+    return /\bcurrent/.test(normalize(field.label)) && (value === "yes") === currentRow(row);
   // Graduated when the end date has passed (as the profile answers it):
   // iCIMS's "Received", or "In Progress" and "Not Received" before then.
   if (/\b(graduate|graduated|degree received|completed)\b/.test(normalize(field.label)) && /^\d{4}-\d{2}/.test(row.endDate)) {
