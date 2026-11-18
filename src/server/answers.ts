@@ -228,6 +228,13 @@ function pageFields(request: GenerationRequest, asked: Set<Field>) {
     }));
 }
 
+// The questions this writer answers: the written ones the profile does not
+// already answer.
+export function writerQuestions(request: Pick<GenerationRequest, "fields">, profile: Profile): Field[] {
+  const normal = new Set(proposals(request.fields, profile).map((proposal) => proposal.fieldId));
+  return request.fields.filter(applicationQuestion).filter((field) => !normal.has(field.id));
+}
+
 export async function writeAnswers(
   config: Config,
   request: GenerationRequest,
@@ -243,8 +250,7 @@ export async function writeAnswers(
   const reasons: Record<string, string> = {};
   // Without the posting there is nothing to say why from: those questions
   // are the applicant's.
-  const normal = new Set(proposals(request.fields, profile).map(proposal => proposal.fieldId));
-  const fields = request.fields.filter(applicationQuestion).filter(field => !normal.has(field.id)).filter((field) => !request.questionIds || request.questionIds.includes(field.id)).filter((field) => {
+  const fields = writerQuestions(request, profile).filter((field) => !request.questionIds || request.questionIds.includes(field.id)).filter((field) => {
     if (request.description.trim() || !opinionQuestion(field.label)) return true;
     withheld.push(field.id);
     reasons[field.id] = "Add the job posting to draft a motivation answer.";

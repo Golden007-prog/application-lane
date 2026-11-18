@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { stopGroup, trackGroup, untrackGroup } from "./command";
 import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -107,13 +108,22 @@ export async function bridge<T>(
   request: object,
   signal?: AbortSignal,
 ): Promise<T> {
+  // Two pdflatex passes per document; the engine's own limit is 120s each.
+  const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(300_000)]);
+  // In a group of its own: a cancel stops the pdflatex it runs too, not only
+  // Python (command.ts).
   const child = spawn(python(), [bridgeScript, sources], {
-    // Two pdflatex passes per document; the engine's own limit is 120s each.
-    signal: AbortSignal.any([
-      ...(signal ? [signal] : []),
-      AbortSignal.timeout(300_000),
-    ]),
+    signal: deadline,
     stdio: ["pipe", "pipe", "pipe"],
+    detached: process.platform !== "win32",
+    windowsHide: true,
+  });
+  trackGroup(child.pid);
+  const stop = () => stopGroup(child.pid);
+  deadline.addEventListener("abort", stop, { once: true });
+  child.on("close", () => {
+    deadline.removeEventListener("abort", stop);
+    untrackGroup(child.pid);
   });
   let stdout = "";
   let stderr = "";

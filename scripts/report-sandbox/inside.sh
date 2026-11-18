@@ -5,7 +5,7 @@
 # Code settings, packages) is there.
 #
 # Two containers per run:
-#   inside.sh fetch                               with the network, no token: clones and installs into /home/agent/work
+#   inside.sh fetch                               no network but the egress proxy, no token: clones and installs into /home/agent/work
 #   inside.sh work <issue number> <model>         no network, no token: the prompt on stdin; leaves /outbox/{fix.patch,agent.log,exit}
 # and their checks (lane-reports-agent --check):
 #   inside.sh check-fetch <probe port> <host address…>
@@ -62,10 +62,43 @@ relay() {
   fail "the relay to the token proxy did not start"
 }
 
+# GitHub and the npm registry, as git and npm are told to find them
+# (HTTPS_PROXY): a relay from 127.0.0.1:3128 to the egress proxy's socket,
+# the fetch container's only way out.
+egress() {
+  [[ -S /egress/proxy.sock ]] || fail "the egress proxy's socket is missing"
+  node -e '
+    const net = require("net");
+    net.createServer((client) => {
+      const proxy = net.connect("/egress/proxy.sock");
+      client.pipe(proxy);
+      proxy.pipe(client);
+      client.on("error", () => proxy.destroy());
+      proxy.on("error", () => client.destroy());
+    }).listen(3128, "127.0.0.1");
+  ' &
+  for _ in $(seq 50); do (exec 3<>/dev/tcp/127.0.0.1/3128) 2>/dev/null && break; sleep 0.1; done
+  (exec 3<>/dev/tcp/127.0.0.1/3128) 2>/dev/null || fail "the relay to the egress proxy did not start"
+  export HTTPS_PROXY=http://127.0.0.1:3128 https_proxy=http://127.0.0.1:3128 npm_config_https_proxy=http://127.0.0.1:3128
+}
+# Whether the egress proxy lets this host through on port 443.
+passes() {
+  node -e '
+    const net = require("net");
+    const socket = net.connect(3128, "127.0.0.1", () => socket.write(`CONNECT ${process.argv[1]}:443 HTTP/1.1\r\nHost: ${process.argv[1]}:443\r\n\r\n`));
+    socket.setTimeout(10000, () => process.exit(1));
+    socket.once("data", (data) => process.exit(/^HTTP\/1\.1 200/.test(String(data)) ? 0 : 1));
+    socket.on("error", () => process.exit(1));
+  ' "$1"
+}
+
 case "$mode" in
   check-fetch)
     contained "${@:2}"
+    reaches 443 1.1.1.1 github.com && fail "it can reach the internet without the egress proxy"
+    egress
     git ls-remote -q "$repository" main >/dev/null || fail "it cannot fetch the repository"
+    passes example.com && fail "the egress proxy lets it reach a host other than GitHub and the npm registry"
     exit 0
     ;;
   check-agent)
@@ -82,6 +115,7 @@ case "$mode" in
     exit 0
     ;;
   fetch)
+    egress
     {
       git clone -q --depth 50 "$repository" /home/agent/work &&
         cd /home/agent/work &&

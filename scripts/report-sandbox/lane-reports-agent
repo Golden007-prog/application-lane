@@ -3,9 +3,10 @@
 # lane-reports user with rootless Podman. Two layers keep it from the
 # applicant's things:
 # - the container: its own filesystem (a fresh clone of the public
-#   repository each run), its own process list, and its own network, from
-#   which the computer's localhost (the backend, other local services) cannot
-#   be reached; it has no GitHub sign-in;
+#   repository each run), its own process list, and no network: git and
+#   npm reach GitHub and the npm registry through a proxy that passes on
+#   nothing else, so neither the computer's localhost (the backend, other
+#   local services) nor its network can be reached; it has no GitHub sign-in;
 # - lane-reports, the user that starts it: it cannot read the applicant's
 #   home or, on WSL, the Windows drives (setup.sh), so even a way out of the
 #   container finds nothing of theirs.
@@ -21,6 +22,7 @@
 #   fix.patch      its changes under src/ and tests/, as git diff writes them
 #   agent.log      what the agent printed; setup.log, the clone and install
 #   proxy.log      what the token proxy passed on or refused (paths only)
+#   egress.log     what the egress proxy passed on or refused (hosts only)
 #   exit           its exit status
 # Nothing here pushes or posts: github-reports work checks the patch and
 # opens the pull request itself.
@@ -50,14 +52,19 @@ base=(--rm -i --timeout 3000
   -v /opt/lane-reports/claude:/usr/local/bin/claude:ro
   -v "$share:/lane:ro"
   -w /home/agent)
-# Fetching the repository and its packages: the network (but not this
-# computer's localhost), and no token.
+# Fetching the repository and its packages: no network either, and no
+# token. git and npm reach GitHub and the npm registry only through the
+# egress proxy's socket (egress-proxy.mjs, run below as lane-reports), which
+# passes on HTTPS to those hosts at a public address and nothing else: not
+# this computer, its network, or any other host. Packages are downloaded
+# afresh each run, into the container's own home, so no run's cache is
+# another's.
 fetch_box() {
-  local work="$1" outbox="$2"
-  shift 2
+  local work="$1" outbox="$2" egress="$3"
+  shift 3
   "${podman_env[@]}" podman run "${base[@]}" \
-    --network slirp4netns:allow_host_loopback=false \
-    -v "$root/npm-cache:/home/agent/.npm:rw" \
+    --network none \
+    -v "$egress:/egress:rw" \
     -v "$work:/home/agent/work:rw" \
     -v "$outbox:/outbox:rw" \
     "$image" bash /lane/inside.sh "$@"
@@ -84,11 +91,15 @@ agent_box() {
 # The proxy, until the session ends; what it passed on or refused goes to
 # <log> (methods, paths and statuses only).
 proxy=""
+egress_proxy=""
 work=""
 sockets=""
+egress=""
 cleanup() {
   [[ -n "$proxy" ]] && kill "$proxy" 2>/dev/null
+  [[ -n "$egress_proxy" ]] && kill "$egress_proxy" 2>/dev/null
   [[ -n "$sockets" ]] && rm -rf "$sockets"
+  [[ -n "$egress" ]] && rm -rf "$egress"
   [[ -n "$work" ]] && rm -rf "$work"
   true
 }
@@ -101,6 +112,23 @@ start_proxy() {
   for _ in $(seq 50); do [[ -S "$sockets/api.sock" ]] && return 0; sleep 0.1; done
   echo "lane-reports-agent: the token proxy did not start" >&2
   return 1
+}
+
+# The egress proxy, while the fetch container runs; what it passed on or
+# refused goes to <log> (hosts only).
+start_egress() {
+  local log="$1"
+  rm -rf "$egress" && mkdir -p "$egress"
+  node "$share/egress-proxy.mjs" "$egress/proxy.sock" "$log" github.com,registry.npmjs.org &
+  egress_proxy=$!
+  for _ in $(seq 50); do [[ -S "$egress/proxy.sock" ]] && return 0; sleep 0.1; done
+  echo "lane-reports-agent: the egress proxy did not start" >&2
+  return 1
+}
+stop_egress() {
+  [[ -n "$egress_proxy" ]] && kill "$egress_proxy" 2>/dev/null
+  egress_proxy=""
+  true
 }
 
 # Whether the session can run, without working on anything.
@@ -136,12 +164,15 @@ if [[ "$number" == --check ]]; then
   rm -rf "$empty" && mkdir -p "$empty/in" "$empty/out" "$empty/work"
   work="$empty/work"
   sockets="$root/run/check-proxy"
+  egress="$root/run/check-egress"
+  start_egress "$empty/out/egress.log" || fail "the egress proxy did not start"
   # shellcheck disable=SC2046
-  fetch_box "$empty/work" "$empty/out" check-fetch "$(cat "$probe_out")" $(hostname -I 2>/dev/null) </dev/null || exit 1
+  fetch_box "$empty/work" "$empty/out" "$egress" check-fetch "$(cat "$probe_out")" $(hostname -I 2>/dev/null) </dev/null || exit 1
+  stop_egress
   start_proxy "$empty/out/proxy.log" || fail "the token proxy did not start"
   # shellcheck disable=SC2046
   agent_box "$empty/work" "$empty/out" "$empty/in" "$sockets" check-agent "$(cat "$probe_out")" $(hostname -I 2>/dev/null) </dev/null || exit 1
-  echo "OK: the containers cannot reach this computer's localhost, its processes or its files; the agent's container has no network and no token, and Claude Code answers in it through the token proxy; lane-reports cannot read your home or the Windows drives."
+  echo "OK: the containers cannot reach this computer's localhost, its network, its processes or its files; the fetch container reaches only GitHub and the npm registry, through the egress proxy; the agent's container has no network and no token, and Claude Code answers in it through the token proxy; lane-reports cannot read your home or the Windows drives."
   exit 0
 fi
 
@@ -156,9 +187,17 @@ mkdir -p "$outbox"
 # The repository, fetched with the network; then the agent, without it.
 work="$root/work/$number"
 sockets="$root/run/proxy-$number"
+egress="$root/run/egress-$number"
 rm -rf "$work" && install -d -m 0700 "$work"
 status=0
-fetch_box "$work" "$outbox" fetch </dev/null || status=$?
+if start_egress "$outbox/egress.log"; then
+  fetch_box "$work" "$outbox" "$egress" fetch </dev/null || status=$?
+else
+  echo 91 >"$outbox/exit"
+fi
+stop_egress
+# A fetch that failed before saying so leaves no clone to work on.
+[[ "$status" == 0 || -s "$outbox/exit" ]] || echo 90 >"$outbox/exit"
 if [[ ! -s "$outbox/exit" ]]; then
   if start_proxy "$outbox/proxy.log"; then
     sed "s/{{ISSUE}}/$number/g" "$share/PROMPT.md" | agent_box "$work" "$outbox" "$inbox" "$sockets" work "$number" "$model" || status=$?

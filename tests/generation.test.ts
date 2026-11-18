@@ -808,8 +808,10 @@ test("codex-cli drafts through codex exec with the CLI's own model and the chose
   assert.equal(result.warnings, undefined);
   assert.equal(result.coverLetter.length, 3);
   const call = await calls();
-  assert.deepEqual(call.args.slice(0, 5), [
+  assert.deepEqual(call.args.slice(0, 6), [
     "exec",
+    // Its events, so a call that ran a tool can be refused (toolsUsed).
+    "--json",
     "--ephemeral",
     "--skip-git-repo-check",
     "--sandbox",
@@ -1225,4 +1227,60 @@ test("a draft's penalty weighs unsupported claims, then sentences opening with I
   assert.ok(iOpened(varied.join(" ")) <= 1 / 3);
   assert.ok(letterPenalty(varied, 0) < letterPenalty(listy, 0));
   assert.ok(letterPenalty(listy, 0) < letterPenalty(varied, 1));
+});
+
+test("the backend's caches of postings and fits keep only their newest entries", async () => {
+  const { remember } = await import("../src/server/generation");
+  const cache = new Map<string, number>();
+  for (let i = 0; i < 5; i++) remember(cache, `k${i}`, i, 3);
+  assert.deepEqual([...cache.keys()], ["k2", "k3", "k4"]);
+  // Set again: it is the newest, and the oldest goes in its place.
+  remember(cache, "k2", 20, 3);
+  remember(cache, "k5", 5, 3);
+  assert.deepEqual([...cache.entries()], [["k4", 4], ["k2", 20], ["k5", 5]]);
+});
+
+test("cancelling a drafting CLI stops what it started too", { skip: process.platform === "win32" }, async (t) => {
+  const { cliComplete } = await import("../src/server/cli-provider");
+  const directory = await mkdtemp(join(tmpdir(), "lane-cli-tree-"));
+  t.after(() => rm(directory, { recursive: true, force: true }));
+  const pidFile = join(directory, "grandchild.pid");
+  const script = join(directory, "claude");
+  // A CLI that starts a long-running process of its own, as a CLI's tools or
+  // a LaTeX engine's pdflatex do, and waits.
+  await writeFile(script, `#!/usr/bin/env node
+const { spawn } = require("node:child_process");
+const child = spawn(process.execPath, ["-e", "setTimeout(() => {}, 600000)"], { stdio: "ignore" });
+require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(child.pid));
+setTimeout(() => {}, 600000);
+`, { mode: 0o755 });
+  const controller = new AbortController();
+  const running = cliComplete({ provider: "claude-cli", cliCommand: script } as any, "system", "user", controller.signal).catch((error) => error);
+  let pid = 0;
+  for (let waited = 0; waited < 100 && !pid; waited++) {
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    pid = Number(await readFile(pidFile, "utf8").catch(() => "0"));
+  }
+  assert.ok(pid, "the stand-in started its process");
+  controller.abort();
+  await running;
+  const alive = () => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  for (let waited = 0; waited < 50 && alive(); waited++) await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(alive(), false);
+});
+
+test("a Codex answer is used only when Codex ran no tool", async () => {
+  const { toolsUsed } = await import("../src/server/cli-provider");
+  // As codex exec --json reports a locked-down call.
+  const clean = [
+    '{"type":"thread.started","thread_id":"t"}',
+    '{"type":"turn.started"}',
+    '{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"…"}}',
+    '{"type":"item.completed","item":{"id":"item_1","type":"agent_message","text":"ready"}}',
+    '{"type":"turn.completed","usage":{"input_tokens":1,"output_tokens":1}}',
+  ].join("\n");
+  assert.deepEqual(toolsUsed(clean), []);
+  const ran = `${clean}\n{"type":"item.started","item":{"id":"item_2","type":"command_execution","command":"cat ~/.ssh/id_rsa"}}\n{"type":"item.completed","item":{"id":"item_3","type":"file_change"}}`;
+  assert.deepEqual(toolsUsed(ran).sort(), ["command_execution", "file_change"]);
+  assert.deepEqual(toolsUsed("not json\n\n"), []);
 });

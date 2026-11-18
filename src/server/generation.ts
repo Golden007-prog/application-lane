@@ -37,6 +37,7 @@ import {
   shortLabel,
   skillContext,
   writeAnswers,
+  writerQuestions,
   type AnswerWriter,
   type WrittenAnswers,
 } from "./answers";
@@ -1026,6 +1027,15 @@ export const defaultBudget = (config: Config) =>
   draftProviderChain(config).reduce((total, step) => total + providerLimit(step), 0) || HTTP_LIMIT_MS;
 const limitedProviders = new Map<string, number>();
 
+// A cache that keeps its newest CACHE_LIMIT entries: one set again moves to
+// the newest, and the oldest goes first.
+export const CACHE_LIMIT = 200;
+export function remember<K, V>(cache: Map<K, V>, key: K, value: V, limit = CACHE_LIMIT) {
+  cache.delete(key);
+  cache.set(key, value);
+  while (cache.size > limit) cache.delete(cache.keys().next().value as K);
+}
+
 // A model's answer as JSON: fences and any prose around the object are
 // dropped, and an answer cut off at the token cap is closed at its last
 // finished element.
@@ -1529,6 +1539,9 @@ export class GenerationQueue {
     profile: Profile;
   }[] = [];
   private running = new Map<string, AbortController>();
+  // The postings read and fits checked, for the applications worked on
+  // lately: the oldest go once there are CACHE_LIMIT, as the backend may run
+  // for weeks. A posting or fit no longer here is read or checked again.
   private postings = new Map<string, Posting>();
   private fits = new Map<string, JobFit>();
   private tasks = new Map<string, Promise<void>>();
@@ -1641,7 +1654,7 @@ export class GenerationQueue {
     const fit = await this.assessFit(request, profile, signal, { graduation }).catch(() =>
       unknownFit(profile, "Job fit could not be assessed right now. Check fit again when the AI service is available."),
     );
-    if (!signal.aborted && fit.verdict !== "unknown") this.fits.set(key, fit);
+    if (!signal.aborted && fit.verdict !== "unknown") remember(this.fits, key, fit);
     return fit;
   }
   // The answers a check threw out, by field, with why: the writer's own
@@ -1984,7 +1997,7 @@ export class GenerationQueue {
         ).catch(() => undefined)) ??
         (request.postingUrl ? await this.readPostingPage(request.postingUrl, controller.signal).catch(() => undefined) : undefined);
       if (posting) {
-        this.postings.set(request.applicationId, posting);
+        remember(this.postings, request.applicationId, posting);
         job.posting = { source: posting.source, title: posting.title, ...(posting.location ? { location: posting.location.slice(0, 300) } : {}) };
         request = {
           ...request,
@@ -2241,9 +2254,14 @@ export class GenerationQueue {
             return result;
           })
         : undefined;
+      // The questions the answer writer takes are not also asked of the
+      // letter request: each was drafted twice, and one draft thrown away.
+      // Should the writer fail or leave one out, the letter request is asked
+      // for those alone, below.
+      const writerIds = new Set(tailorDir ? writerQuestions(request, profile).map((field) => field.id) : []);
       const drafting: DraftRequest = { ...request, letter, ...(pageText ? { pageText } : {}) };
       let narrative = await this.generate(
-        drafting,
+        writerIds.size ? { ...drafting, fields: request.fields.filter((field) => !writerIds.has(field.id)) } : drafting,
         profile,
         controller.signal,
       ).finally(async () => { await planning; await fitting; });
@@ -2251,6 +2269,23 @@ export class GenerationQueue {
       const plan = await planning;
       const written = await answering;
       job.fit = await fitting;
+      // The writer's questions it neither answered nor left for the
+      // applicant: drafted by the letter request after all.
+      const unanswered = [...writerIds].filter(
+        (id) => !written || written instanceof Error || !(written.answers.some((answer) => answer.fieldId === id) || written.withheld.includes(id)),
+      );
+      if (unanswered.length) {
+        const backup = await this.generate(
+          { ...drafting, letter: false, fields: request.fields.filter((field) => unanswered.includes(field.id)) } as DraftRequest,
+          profile,
+          controller.signal,
+        ).catch((error: Error) => {
+          controller.signal.throwIfAborted();
+          console.warn("[generation] backup answers failed:", error.message);
+          return undefined;
+        });
+        if (backup) narrative.answers = [...narrative.answers.filter((answer) => !unanswered.includes(answer.fieldId)), ...backup.answers.filter((answer) => unanswered.includes(answer.fieldId))];
+      }
       lap("drafting");
       // With job-applier the resume comes from its brief, not this ranking.
       if (this.config.tailorDir)

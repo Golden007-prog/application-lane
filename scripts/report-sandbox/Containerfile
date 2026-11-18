@@ -1,8 +1,9 @@
 # The isolated session's image: Playwright's own (Node, and the browsers this
-# repository's tests use), with git. setup.sh builds it as lane-reports, with
-# the Playwright version the repository pins.
-ARG PLAYWRIGHT
-FROM mcr.microsoft.com/playwright:v${PLAYWRIGHT}-noble
+# repository's tests use), with git. setup.sh builds it as lane-reports from
+# the Playwright image for the version the repository pins, named by its
+# digest (BASE=mcr.microsoft.com/playwright@sha256:…), not by a tag.
+ARG BASE
+FROM ${BASE}
 RUN apt-get update \
  && apt-get install -y --no-install-recommends git ca-certificates \
  && rm -rf /var/lib/apt/lists/*

@@ -10,13 +10,14 @@
 # container, which lane-reports (a system user that cannot read your home
 # folder) starts with rootless Podman. The container clones the public
 # repository afresh every time, has its own process list, and its own
-# network, from which this computer's localhost (your backend) cannot be
-# reached. The agent itself works in a second container with no network at
+# network: git and npm in it reach GitHub and the npm registry through a
+# proxy lane-reports runs outside it (egress-proxy.mjs), which passes on
+# nothing else, so neither this computer's localhost (your backend) nor your
+# network can be reached. The agent itself works in a second container with no network at
 # all and no token: its requests to Claude go through a proxy that
 # lane-reports runs outside it (token-proxy.mjs), which adds the token. It installs Podman if it is missing, and keeps in /srv/lane-reports:
 #   home/       lane-reports' home: its Claude token and Podman's images
 #   run/        Podman's runtime folder
-#   npm-cache/  packages downloaded for the container, checked against the lock file on use
 #   work/       each run's clone, removed when the run ends
 #   inbox/      reports you hand it (github-reports work writes them), which it only reads
 #   outbox/     what it leaves for you to read: a verdict and a patch
@@ -84,7 +85,9 @@ if ! grep -q "^$user:" /etc/subuid || ! grep -q "^$user:" /etc/subgid; then
 fi
 
 install -d -o root -g root -m 0755 "$root"
-install -d -o "$user" -g "$user" -m 0700 "$root/home" "$root/run" "$root/npm-cache" "$root/work"
+install -d -o "$user" -g "$user" -m 0700 "$root/home" "$root/run" "$root/work"
+# Packages are downloaded afresh in each run's container now, not shared.
+rm -rf "$root/npm-cache"
 # The inbox is yours; it may only read it.
 install -d -o "$owner" -g "$owner" -m 0750 "$root/inbox"
 setfacl -m u:"$user":rx "$root/inbox"
@@ -105,14 +108,23 @@ as_user podman system migrate >/dev/null 2>&1 || true
 
 # The image: Playwright's own for the version this repository pins, with git.
 playwright="$(node -p 'require(process.argv[1]).version' "$checkout/node_modules/@playwright/test/package.json")"
-image="localhost/lane-reports:$playwright"
+tag="localhost/lane-reports:$playwright"
 # Built from a copy where lane-reports can read it (it cannot read your checkout).
 install -d -o root -g root -m 0755 "$share"
 install -o root -g root -m 0644 "$here/Containerfile" "$share/Containerfile"
-if ! as_user podman image exists "$image"; then
+if ! as_user podman image exists "$tag"; then
   echo "Building the session's image (Playwright $playwright); the first time downloads about 2 GB…"
-  as_user podman build -q --build-arg PLAYWRIGHT="$playwright" -t "$image" -f "$share/Containerfile" "$share" >/dev/null
+  # Playwright's image by the digest it has now, not by its tag, which can
+  # be moved to other contents later.
+  upstream="mcr.microsoft.com/playwright:v$playwright-noble"
+  as_user podman pull -q "$upstream" >/dev/null
+  digest="$(as_user podman image inspect --format '{{.Digest}}' "$upstream")"
+  [[ "$digest" =~ ^sha256:[0-9a-f]{64}$ ]] || { echo "Could not read the digest of $upstream." >&2; exit 1; }
+  as_user podman build -q --build-arg BASE="mcr.microsoft.com/playwright@$digest" -t "$tag" -f "$share/Containerfile" "$share" >/dev/null
 fi
+# The sessions run this exact build, by its ID: a tag can be moved.
+image="$(as_user podman image inspect --format '{{.Id}}' "$tag")"
+[[ "$image" =~ ^[0-9a-f]{64}$ ]] || { echo "Could not read the ID of $tag." >&2; exit 1; }
 
 # Claude Code, the version you run.
 install -d -o root -g root -m 0755 /opt/lane-reports
@@ -138,6 +150,7 @@ install -d -o root -g root -m 0755 "$share"
 install -o root -g root -m 0644 "$here/PROMPT.md" "$share/PROMPT.md"
 install -o root -g root -m 0644 "$here/inside.sh" "$share/inside.sh"
 install -o root -g root -m 0644 "$here/token-proxy.mjs" "$share/token-proxy.mjs"
+install -o root -g root -m 0644 "$here/egress-proxy.mjs" "$share/egress-proxy.mjs"
 printf '%s\n' "$image" > "$share/image"
 printf '%s\n' "$remote" > "$share/repository"
 chmod 0644 "$share/image" "$share/repository"

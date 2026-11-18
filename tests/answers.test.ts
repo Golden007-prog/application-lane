@@ -213,7 +213,10 @@ test("the model's answers are grounded, cleaned and fitted before use", async (t
 });
 
 test("the queue uses the profile's answers in place of the letter request's, and survives their failure", async () => {
+  // The questions each letter request was asked.
+  let asked: string[][] = [];
   const run = async (answer: () => Promise<{ answers: any[]; warnings: string[]; withheld: string[]; sources: Record<string, string> }>) => {
+    asked = [];
     const store = new Store(await mkdtemp(join(tmpdir(), "lane-answers-queue-")));
     await store.init();
     store.data.profile = structuredClone(profile);
@@ -221,7 +224,7 @@ test("the queue uses the profile's answers in place of the letter request's, and
     const queue = new GenerationQueue(
       store,
       config,
-      async () => ({
+      async (request) => (asked.push(request.fields.map((field) => field.id)), {
         resume: [{ factId: "a", text: profile.facts[0].text }],
         coverLetter: [{ text: "Dear Hiring Team,", factIds: [] }, { text: profile.facts[0].text, factIds: ["a"] }],
         answers: [
@@ -248,10 +251,14 @@ test("the queue uses the profile's answers in place of the letter request's, and
     replaced.answers.map((a) => [a.fieldId, a.value]),
     [["why", "from the profile"], ["other", "kept"]],
   );
+  // The writer's questions are not asked of the letter request with the
+  // letter; the one it left out is asked of it afterwards, alone.
+  assert.deepEqual(asked, [[], ["other"]]);
   const failed = await run(async () => {
     throw new Error("Claude is not installed or not on PATH.");
   });
   assert.deepEqual(failed.answers.map((a) => a.value), ["from the letter request", "kept"]);
+  assert.deepEqual(asked, [[], ["why", "other"]]);
   assert.match(failed.warnings!.join(" "), /could not be written from your tailoring notes.*not on PATH/);
 });
 

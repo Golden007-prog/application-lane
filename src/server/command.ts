@@ -63,3 +63,27 @@ export function stopTree(pid: number, signal: NodeJS.Signals = "SIGTERM"): void 
   if (windows) spawnSync("taskkill", ["/pid", String(pid), "/t", "/f"], { stdio: "ignore", windowsHide: true });
   else process.kill(-pid, signal);
 }
+
+// Process groups the backend started (a drafting CLI, the LaTeX engine's
+// Python and the pdflatex under it): stopped whole when their work is
+// cancelled, and any still running when the backend exits. In their own
+// group they no longer get the terminal's Ctrl+C, so this is what stops them.
+const groups = new Set<number>();
+export function trackGroup(pid: number | undefined) {
+  if (pid) groups.add(pid);
+}
+export function untrackGroup(pid: number | undefined) {
+  if (pid) groups.delete(pid);
+}
+export function stopGroup(pid: number | undefined) {
+  if (!pid || !groups.has(pid)) return;
+  groups.delete(pid);
+  try {
+    stopTree(pid);
+  } catch {
+    /* Already gone. */
+  }
+}
+process.once("exit", () => {
+  for (const pid of [...groups]) stopGroup(pid);
+});

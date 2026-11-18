@@ -3,13 +3,31 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { randomBytes } from "node:crypto";
-import { launch, stopTree } from "./command";
+import { launch, stopGroup, trackGroup, untrackGroup } from "./command";
 import type { Config } from "./store";
 
 // Drafting through a locally logged-in Claude Code or Codex CLI instead of an
 // HTTP endpoint. Each call is one locked-down, single-turn completion: no
 // tools, no settings, hooks, MCP servers or project files, run from an empty
 // directory, so the posting text (untrusted) can reach nothing but the model.
+
+// The kinds of item a Codex run reported (its --json events) beyond its
+// message and its reasoning: a command, a file change, a tool, a search.
+const harmlessItems = new Set(["agent_message", "reasoning"]);
+export function toolsUsed(events: string): string[] {
+  const kinds = new Set<string>();
+  for (const line of events.split("\n")) {
+    if (!line.trim().startsWith("{")) continue;
+    try {
+      const event = JSON.parse(line) as { type?: string; item?: { type?: string } };
+      const kind = event.item?.type;
+      if (kind && !harmlessItems.has(kind)) kinds.add(kind);
+    } catch {
+      /* Not an event line. */
+    }
+  }
+  return [...kinds];
+}
 
 // One message for Codex: the instructions, then the input between two
 // markers that carry a random token, named as data.
@@ -85,12 +103,11 @@ function run(
   env?: NodeJS.ProcessEnv,
 ): Promise<string> {
   return new Promise((done, fail) => {
-    // On Windows an npm-installed CLI is a .cmd script run through cmd.exe,
-    // and cancelling would stop only that shell: stop what it started first.
+    // Cancelling stops the CLI and everything it started: in a group of its
+    // own (on Windows an npm-installed CLI is a .cmd script, and stopping
+    // that shell alone left the CLI running).
     const started = launch(command, args);
-    const stop = () => {
-      if (process.platform === "win32" && child?.pid) stopTree(child.pid);
-    };
+    const stop = () => stopGroup(child?.pid);
     signal.addEventListener("abort", stop, { once: true });
     const child = spawn(started.command, started.args, {
       cwd,
@@ -98,9 +115,14 @@ function run(
       env: env ? { ...process.env, ...env } : process.env,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
+      detached: process.platform !== "win32",
       windowsVerbatimArguments: started.windowsVerbatimArguments,
     });
-    child.on("close", () => signal.removeEventListener("abort", stop));
+    trackGroup(child.pid);
+    child.on("close", () => {
+      signal.removeEventListener("abort", stop);
+      untrackGroup(child.pid);
+    });
     let stdout = "";
     let stderr = "";
     child.stdout.on("data", (chunk) => (stdout += chunk));
@@ -188,10 +210,12 @@ export async function cliComplete(
     }
     const answer = join(directory, "answer.txt");
     const command = cliCommand(provider, config.cliCommand);
-    await run(
+    const events = await run(
       command,
       [
         "exec",
+        // Its events, one JSON line each, so the call can show it used no tool.
+        "--json",
         "--ephemeral",
         "--skip-git-repo-check",
         "--sandbox",
@@ -222,6 +246,11 @@ export async function cliComplete(
       signal,
       config.cliHome ? { CODEX_HOME: config.cliHome } : undefined,
     );
+    // The lockdown, confirmed on every call: an answer from a Codex that ran
+    // a command, changed a file or used any other tool is not used, whatever
+    // a version that ignores features.shell_tool=false allowed.
+    const used = toolsUsed(events);
+    if (used.length) throw new CliFailure("response", `Codex used a tool it should not have (${used.join(", ")}), so its answer was not used`);
     return await readFile(answer, "utf8");
   } finally {
     await rm(directory, { recursive: true, force: true }).catch(() => {});
