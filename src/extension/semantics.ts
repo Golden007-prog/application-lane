@@ -852,7 +852,35 @@ export function select2Selection(element: Element): HTMLElement | undefined {
   return container.querySelector<HTMLElement>(".select2-selection") || undefined;
 }
 
+// A honeypot: a box a person never sees, there to catch a bot that fills
+// everything. Filling it can mark the application as spam. It is a typed
+// box (a hidden checkbox, radio or file input is usually the real control
+// behind a drawn one) that is moved off the page, named as a trap, or
+// labelled to be left blank ("Leave this field blank", "If you are human,
+// do not fill this in"); "Phone (leave blank if none)" asks to be filled.
+const honeypotName = /honeypot|bot[-_]?field|_gotcha|(?:^|[-_])hp[-_]/i;
+const honeypotLabel = /\bleave (?:this|it)(?: field| box)? (?:blank|empty)\b(?! if| unless)|\b(?:do not|don't|dont) (?:fill|complete|enter|type)\b.{0,20}\b(?:this|it|here|out)\b|\bif you are (?:a )?human\b|\bfor (?:bots|robots) only\b/i;
+export function honeypot(element: Control): boolean {
+  if (!(element instanceof HTMLTextAreaElement || (element instanceof HTMLInputElement && /^(text|email|tel|url|number|search|)$/.test(element.type))))
+    return false;
+  if (element.getAttribute("role") === "combobox" || element.hasAttribute("aria-autocomplete")) return false;
+  if ([element.getAttribute("name"), element.id, element.getAttribute("class")].some((value) => value && honeypotName.test(value))) return true;
+  const root = element.getRootNode() as Document | ShadowRoot;
+  const labels = [
+    ...[...(element.labels || [])].map((label) => label.textContent || ""),
+    element.getAttribute("aria-label") || "",
+    element.getAttribute("placeholder") || "",
+    ...(element.getAttribute("aria-labelledby") || "").split(/\s+/).filter(Boolean).map((id) => root.querySelector(`#${CSS.escape(id)}`)?.textContent || ""),
+  ].join(" ");
+  if (honeypotLabel.test(labels)) return true;
+  // Wholly left of or above the page, where no one can scroll to it.
+  const box = element.getBoundingClientRect();
+  const view = element.ownerDocument.defaultView;
+  return Boolean(view) && (box.right + view!.scrollX < 0 || box.bottom + view!.scrollY < 0);
+}
+
 export function controlVisible(element: Control): boolean {
+  if (honeypot(element)) return false;
   if (rendered(element)) return true;
   if (element instanceof HTMLInputElement && element === paylocityForcedResume(element.ownerDocument)) return true;
   const selection = select2Selection(element);
