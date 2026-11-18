@@ -52,7 +52,7 @@ npx playwright test tests/browser/extension.spec.ts -g "<pattern>"   # one test 
 npm run benchmark                                             # throughput benchmark only
 ```
 
-The suite runs Playwright's Chromium headless, three tests in parallel, and only one suite runs per machine at a time, so it also works on a machine without a display. `test-results/` keeps screenshots and traces of failures.
+The suite runs Playwright's Chromium headless, three tests in parallel, and only one suite runs per machine at a time, so it also works on a machine without a display. A failing test gets one more try: one that passes only on that second try is reported as **flaky** in the summary. Those pass the run but are worth fixing; usually a time limit a busy machine can exceed. `test-results/` keeps screenshots and traces of failures.
 
 `npm run verify` runs the type check, unit tests, build and browser suite in one go.
 
@@ -90,4 +90,4 @@ Never commit anything from a data folder, `transcripts/`, or real résumés and 
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and pull request: install, type check, unit tests, both builds and packaging. On pull requests and pushes to `main` it also runs a browser smoke job: eight tests that guard what the extension promises (it never submits or presses Next on its own, an edit pauses a fill, and it signs and fills AI answers only as set), capped at 15 minutes. The whole browser suite runs nightly, and by hand from the Actions tab (`workflow_dispatch`).
+`.github/workflows/ci.yml` runs on every push and pull request: install, type check, unit tests, both builds and packaging. On pull requests and pushes to `main` it also runs a browser smoke job: eight tests that guard what the extension promises (it never submits or presses Next on its own, an edit pauses a fill, and it signs and fills AI answers only as set), capped at 15 minutes. The whole browser suite runs in its own workflow, `.github/workflows/nightly.yml`: every night, and by hand from the Actions tab (`workflow_dispatch`). The actions both workflows use are pinned to commits, not tags, so a moved tag cannot change what runs.

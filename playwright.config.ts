@@ -14,6 +14,12 @@ export default defineConfig({
   // run side by side, as applications do in the extension.
   fullyParallel: true,
   workers: 3,
+  // One more try for a test that fails: three browsers, backends and
+  // extensions share the machine, and a busy moment can push one past a time
+  // limit (a fill that took 28 s against a 25 s wait). A test that passes
+  // only on its second try is reported as flaky, not hidden: those are the
+  // ones to fix.
+  retries: 1,
   // One run at a time on a machine: a second waits for the first to end.
   globalSetup: "./tests/support/global-setup.ts",
   outputDir: fixer ? ".fixer/test-results" : "test-results",
