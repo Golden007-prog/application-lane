@@ -2,6 +2,7 @@ import type {
   FillAction,
   InputSelector,
   GlobalConfig,
+  Selector,
   SelectorConfig,
   SiteConfig,
 } from "./schema";
@@ -2203,506 +2204,20 @@ export async function interpretConfig(
         continue;
       }
     }
-    let lastReason = notMatched;
-    let lastStatus: "skipped" | "failed" = "failed";
-    let completed = false;
-    let deferredRows = false;
+    const state: ChoiceState = { lastReason: notMatched, lastStatus: "failed", completed: false, deferredRows: false };
     const addedRows = new Set<number>();
     selectorChoices: for (const choice of choices) {
       const selector: SelectorConfig =
         typeof choice === "string" ? { path: choice } : choice;
       if (selector.manual) {
-        lastReason = "Configuration requires manual input.";
-        lastStatus = "skipped";
+        state.lastReason = "Configuration requires manual input.";
+        state.lastStatus = "skipped";
         continue;
       }
-      if (selector.array || selector.inputSelectors) {
-        const collection =
-          key === "education"
-            ? "education"
-            : key === "experience"
-              ? "experience"
-              : undefined;
-        // Lists the profile keeps as plain values, one row each: languages,
-        // and the links a form's Websites section takes (Workday).
-        const list = key === "language" ? "languages" : key === "websites" ? "websites" : undefined;
-        if (list && selector.array && selector.inputSelectors) {
-          // A link the page already holds (the site read it from the resume)
-          // is not added again, and a row holding one is left as it is: one employer's
-          // Workday listed GitHub twice.
-          const linkKey = (value: string) => value.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
-          const held = (row: Element) =>
-            [...row.querySelectorAll<HTMLInputElement>('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])')].map((input) => input.value).filter((value) => value.trim());
-          // A Websites section a Workday tenant titles "an employer" ("Add any
-          // relevant websites.") is for that link alone: five links were
-          // given there, and rows holding other links are deleted.
-          const linkedInOnly = list === "websites" && Boolean(root.querySelector('[role="group"][aria-labelledby="LinkedIn-section"]'));
-          const isLinkedIn = (value: string) => /(^|\.)linkedin\.com$/.test(linkKey(value).split("/")[0]);
-          if (linkedInOnly) {
-            for (let removed = 0; removed < 10; removed++) {
-              const stray = [...root.querySelectorAll('[role="group"][aria-labelledby^="LinkedIn-"][aria-labelledby$="-panel"]')]
-                .find((row) => held(row).length && !held(row).some(isLinkedIn));
-              const remove = stray && [...stray.querySelectorAll("button")].find((button) => /^\s*delete\s*$/i.test(button.textContent || ""));
-              if (!stray || !remove) break;
-              await (options.execute || defaultExecute)({ element: remove, guardElement: stray, globals, method: "click", signal: options.signal, values: [] });
-              for (let waited = 0; stray.isConnected && waited < 2_000; waited += 100) await sleep(100, options.signal);
-              if (stray.isConnected) break;
-            }
-          }
-          const onPage = new Set(
-            list === "websites"
-              ? paths(selector.containerPath)
-                  .flatMap((path) => Array.from({ length: 20 }, (_, n) => queryXPathAll(root, path.replaceAll("%INDEX0%", String(n)).replaceAll("%NUMBER0%", String(n + 1)), context)).flat())
-                  .flatMap(held)
-                  .map(linkKey)
-              : [],
-          );
-          const items = list === "languages"
-            ? profileLanguages(profile.languages).map((row) => row.language)
-            : linksToShare(config, profile, root, context).filter((link) => !onPage.has(linkKey(link)) && (!linkedInOnly || isLinkedIn(link)));
-          let count = 0;
-          // What a row's fill wants the applicant to look at (a closest pick).
-          const cautions: string[] = [];
-          const visited = new Set<Element>();
-          // A language Oracle already lists as a saved tile ("English (United
-          // States)", kept by an earlier fill) is not added again: its list no
-          // longer offers that entry, and a second row sat open on the other
-          // Englishes (Higher).
-          const savedLanguages = list === "languages"
-            ? (await removeDamagedTiles(paths(selector.savedRowPath).flatMap((path) => queryXPathAll(root, path, context)), globals, options))
-                .map((tile) => ` ${plainText(tile.textContent)} `)
-            : [];
-          const alreadySaved = (item: string) => Boolean(plainText(item)) && savedLanguages.some((tile) => tile.includes(` ${plainText(item)} `));
-          for (let index = 0; index < Math.min(items.length, selector.limit ?? items.length); index++) {
-            if (list === "languages" && alreadySaved(items[index])) continue;
-            const substitute = (path: string) =>
-              path.replaceAll("%INDEX0%", String(index)).replaceAll("%NUMBER0%", String(index + 1));
-            const free = (row: Element) => !visited.has(row) && !(list === "websites" && held(row).length);
-            // Its own number first; for links, any empty row the site
-            // numbered otherwise (the first one held the site's GitHub, and
-            // the row added after it was confirmed by the first's number).
-            const rowAt = () =>
-              paths(selector.containerPath)
-                .flatMap((path) => queryXPathAll(root, substitute(path), context))
-                .find(free) ||
-              (list === "websites"
-                ? paths(selector.containerPath)
-                    .flatMap((path) => Array.from({ length: 20 }, (_, n) => queryXPathAll(root, path.replaceAll("%INDEX0%", String(n)).replaceAll("%NUMBER0%", String(n + 1)), context)).flat())
-                    .find(free)
-                : undefined);
-            let scope = rowAt();
-            if (!scope && selector.addButtonPath) {
-              const add = paths(selector.addButtonPath)
-                .flatMap((path) => queryXPathAll(root, path, context))
-                .find((candidate) => candidate.isConnected);
-              if (!add || options.isLocked?.(add) || isForbiddenClick(add, forbidden)) break;
-              if (!(await (options.execute || defaultExecute)({ element: add, globals, method: "click", signal: options.signal, values: [] }))) break;
-              const confirmed = await waitFor(root, paths(selector.confirmAddedPath).map(substitute), context, selector.time ?? 5_000, false, options);
-              scope = rowAt() || (confirmed && (list !== "websites" || free(confirmed)) ? confirmed : undefined);
-              // A site whose rows are all alike (Oracle's links) confirms the
-              // first row at once, a row held by a link; the one just added
-              // is drawn a moment later.
-              if (!scope && list === "websites") {
-                const deadline = (options.now?.() ?? Date.now()) + (selector.time ?? 5_000);
-                while (!scope && (options.now?.() ?? Date.now()) < deadline) {
-                  await sleep(options.pollMs ?? 100, options.signal);
-                  scope = rowAt();
-                }
-              }
-            }
-            if (!scope) {
-              lastReason = `The added ${list} row was not confirmed.`;
-              lastStatus = "failed";
-              break;
-            }
-            visited.add(scope);
-            const statuses = await interpretConfig(
-              root,
-              url,
-              { ...config, containerPath: [], containerRequired: false, inputSelectors: flattenGroups(selector.inputSelectors) },
-              globals,
-              profile,
-              { ...options, context: scope, valueContext: { collection: list, index, item: items[index] }, used },
-            );
-            count += statuses.filter((status) => status.status === "filled").length;
-            for (const status of statuses) {
-              if (status.status === "failed") results.push({ ...status, key: `${key}[${index}].${status.key}` });
-              if (status.status === "filled" && status.caution) cautions.push(status.caution);
-            }
-          }
-          if (count) {
-            results.push({ key, status: "filled", ...(cautions.length ? { caution: cautions.join(" ") } : {}) });
-            completed = true;
-            break;
-          }
-          lastReason ||= "Repeated section requires a profile row.";
-          lastStatus = "skipped";
-          continue;
-        }
-        if (collection && selector.inputSelectors) {
-          const rows =
-            collection === "education" ? profile.education : profile.work;
-          let count = 0;
-          // A row's cautions (a closest pick, a search left unpicked) were
-          // dropped with its count; the applicant needs to see them.
-          const cautions: string[] = [];
-          const visitedScopes = new Set<Element>();
-          // Every row on the page, in the order they appear.
-          const pageRows = () => {
-            const addButton = paths(selector.addButtonPath)
-              .flatMap((path) => queryXPathAll(root, path, context))
-              .find((candidate) => candidate.isConnected);
-            const detected = repeatedScopes(collection, context).filter(
-              (candidate) => !addButton || !candidate.contains(addButton),
-            );
-            // Row numbers in container ids are the site's own (iCIMS numbers
-            // its rows 3, 1, 2 down the page), so collect every row and use
-            // the order they appear in.
-            const found: Element[] = [];
-            for (let number = 0; number <= rows.length + 20; number++)
-              for (const path of paths(selector.containerPath))
-                for (const scope of queryXPathAll(
-                  root,
-                  path
-                    .replaceAll("%INDEX0%", String(number))
-                    .replaceAll("%NUMBER0%", String(number)),
-                  context,
-                ))
-                  // A fallback can name an ancestor of an already found row
-                  // (one employer's education section); it is still the same entry.
-                  if (!found.some((row) => row === scope || row.contains(scope) || scope.contains(row))) found.push(scope);
-            for (const scope of detected)
-              if (
-                !found.includes(scope) &&
-                !found.some((row) => row.contains(scope) || scope.contains(row))
-              )
-                found.push(scope);
-            return found.sort((a, b) =>
-              a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
-            );
-          };
-          const existingScopes = pageRows();
-          // Rows that were on the page, or added already, are other entries:
-          // a row added for this one must be a new one.
-          const knownRows = [...existingScopes];
-          // A container a site reuses for each entry (Oracle's, below) is new
-          // again once empty.
-          const fresh = (element: Element) =>
-            ![...element.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),textarea')].some(
-              (control) => (control as HTMLInputElement).value,
-            );
-          const knownRow = (row: Element) =>
-            !(selector.allowReuse && fresh(row)) && knownRows.some((known) => known === row || known.contains(row) || row.contains(known));
-          let matchedScopes = existingScopes.length
-            ? matchHistoryRows(collection, rows, existingScopes, (element) =>
-                Boolean(options.isReplaceable?.(element)),
-              )
-            : new Map<number, Element>();
-          // Oracle shows the entries already saved to the candidate's profile
-          // as tiles with no fields: the title and subtitle name the job and
-          // employer (or major) and its dates. A profile row a tile already
-          // names is kept, not added again (egug.fa.us2.oraclecloud.com).
-          // Each piece of text on its own: Workable's cards put "Title" and
-          // "Software Engineer Intern" in elements with no space between
-          // them.
-          const tileText = (tile: Element) => {
-            const pieces: string[] = [];
-            const walker = tile.ownerDocument.createTreeWalker(tile, NodeFilter.SHOW_TEXT);
-            for (let node = walker.nextNode(); node; node = walker.nextNode()) pieces.push(node.textContent || "");
-            return pieces.join(" ");
-          };
-          const savedTileElements = await removeDamagedTiles(
-            paths(selector.savedRowPath).flatMap((path) => queryXPathAll(root, path, context)),
-            globals,
-            options,
-          );
-          // Oracle's timeline cards give the dates in words: "From March 2026 to
-          // No date provided". Read as a tile's "03 2026 present".
-          const monthNumbers = MONTH_NAMES_LOWER;
-          const datesAsNumbers = (text: string) =>
-            text
-              .replace(/\bfrom\s+(?=[a-z]+\s+\d{4})/gi, "")
-              .replace(/\s+to\s+(?=[a-z]+\s+\d{4}|no date)/gi, " ")
-              .replace(/\bno date provided\b/gi, "present")
-              .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b/gi, (_, month: string, year: string) => `${String(monthNumbers.indexOf(month.toLowerCase()) + 1).padStart(2, "0")} ${year}`);
-          const savedTiles = savedTileElements.map((tile) => ` ${plainText(datesAsNumbers(tileText(tile)))} `);
-          // A saved entry is an existing row too: Workable draws a new entry's
-          // editor first in its list, and the confirmation, by position, named
-          // the saved MSU card instead. Nothing of Penn State's went in, the
-          // editor was never saved, and MSU's name reached it from the page's
-          // first school.
-          knownRows.push(...savedTileElements.filter((tile) => !tile.querySelector('input:not([type="hidden"]),textarea,select')));
-          // Oracle's tile names the major and the dates, not the school
-          // ("Data Science 08/2025 - 05/2027"): a tile showing a row's start
-          // and end is that row (Higher, each refill added the
-          // entries again). A tile with no dates ("Unnamed Major") is none.
-          const monthYear = (value: string | undefined) => {
-            const found = value?.match(/^(\d{4})-(\d{2})/);
-            return found ? `${found[2]} ${found[1]}` : "";
-          };
-          const savedWithDates = (row: Profile["education"][number]) => {
-            const start = monthYear(row.startDate);
-            if (!start) return false;
-            const end = monthYear(row.endDate) || (row.endDate ? "" : "present");
-            return Boolean(end) && savedTiles.some((tile) => tile.includes(` ${start} ${end} `));
-          };
-          const saved = new Set(
-            rows.flatMap((row, index) => {
-              if (!savedTiles.length) return [];
-              if (savedWithDates(row)) return [index];
-              const subject = plainText(row.fieldOfStudy || row.title);
-              const organization = plainText(row.organization);
-              const year = row.startDate?.match(/\d{4}/)?.[0];
-              // The same school or employer from the same year is that row,
-              // however the tile names the subject: one employer's tile said "Data
-              // Science" for the profile's "M.S. Data Science, Analytics &
-              // Engineering", and the degree was added again.
-              return savedTiles.some(
-                (tile) =>
-                  (Boolean(subject) &&
-                    tile.includes(` ${subject} `) &&
-                    ((Boolean(organization) && tile.includes(` ${organization} `)) ||
-                      (Boolean(year) && tile.includes(` ${year} `)))) ||
-                  (Boolean(organization) && tile.includes(` ${organization} `) &&
-                    Boolean(year) && tile.includes(` ${year} `)),
-              )
-                ? [index]
-                : [];
-            }),
-          );
-          // An entry already saved is no open row's: the rows still open
-          // are matched among the profile's unsaved ones only. An editor a
-          // cut-off pass left open (SmartRecruiters' second school, its fields in
-          // shadow roots no match could read) went by page order to the saved
-          // first school, the second was added again, and the open one was
-          // never saved.
-          // A saved entry's own card or tile is no editor either: Oracle's
-          // timeline cards were taken for the open row of the next entry,
-          // and the card, not a new form, was the one "filled".
-          const editors = existingScopes.filter((scope) => !savedTileElements.some((tile) => tile === scope || tile.contains(scope)));
-          if ((saved.size || editors.length < existingScopes.length) && existingScopes.length) {
-            const unsaved = rows.map((row, index) => ({ row, index })).filter(({ index }) => !saved.has(index));
-            const rematched = matchHistoryRows(collection, unsaved.map(({ row }) => row), editors, (element) =>
-              Boolean(options.isReplaceable?.(element)),
-            );
-            matchedScopes = new Map([...rematched].map(([at, scope]) => [unsaved[at].index, scope]));
-          }
-          options.note?.({
-            rows: collection,
-            profileRows: rows.length,
-            pageRows: existingScopes.length,
-            matched: [...matchedScopes.keys()],
-            ...(saved.size ? { saved: [...saved] } : {}),
-          });
-          for (
-            let index = 0;
-            index < Math.min(rows.length, selector.limit ?? rows.length);
-            index++
-          ) {
-            if (saved.has(index)) continue;
-            const substituteIndex = (path: string) =>
-              path
-                .replaceAll("%INDEX0%", String(index))
-                .replaceAll("%NUMBER0%", String(index + 1));
-            const containerPaths = paths(selector.containerPath);
-            // Workday numbers its rows arbitrarily ("education-184"), so a
-            // configured container path keyed on the row index often misses;
-            // structural detection finds the row either way. A section that
-            // holds the Add button is not a row.
-            const addButton = paths(selector.addButtonPath)
-              .flatMap((path) => queryXPathAll(root, path, context))
-              .find((candidate) => candidate.isConnected);
-            const detectedScopes = () =>
-              repeatedScopes(collection, context).filter(
-                (candidate) =>
-                  (!addButton || !candidate.contains(addButton)) &&
-                  !savedTileElements.some((tile) => tile === candidate || tile.contains(candidate)),
-              );
-            // A row an earlier entry was written into is that entry's, still
-            // open when its Save was refused: the next entry is added as its
-            // own. A path naming any open editor found the first school's
-            // again, and the second was never added (one employer's
-            // SmartRecruiters form).
-            const otherEntry = (row: Element) =>
-              visitedScopes.has(row) && !(selector.allowReuse && fresh(row));
-            let scope: Element | undefined = matchedScopes.size
-              ? matchedScopes.get(index)
-              : containerPaths.flatMap((path) =>
-                  queryXPathAll(root, substituteIndex(path), context),
-                ).find((row) => !otherEntry(row)) || detectedScopes()[index];
-            if (scope && otherEntry(scope)) scope = undefined;
-            options.note?.({ rows: collection, index, scope: Boolean(scope), add: !scope && Boolean(selector.addButtonPath) });
-            if (!scope && selector.addButtonPath) {
-              if (!addedRows.has(index)) {
-                // Oracle opens one entry form at a time, work or education,
-                // and hides every Add button while one is open: the Add waits for the form before it
-                // to close, and a section that still has no Add button is
-                // tried again once the other sections have saved theirs.
-                const findAdd = () =>
-                  paths(selector.addButtonPath)
-                    .flatMap((path) => queryXPathAll(root, path, context))
-                    .find((candidate) => candidate.isConnected && !candidate.closest("[hidden]"));
-                let add = findAdd();
-                for (
-                  const deadline = (options.now?.() ?? Date.now()) + (retried.has(key) ? selector.time ?? 5_000 : 2_500);
-                  !add && (options.now?.() ?? Date.now()) < deadline;
-                ) {
-                  await sleep(options.pollMs ?? 100, options.signal);
-                  add = findAdd();
-                }
-                if (!add && !retried.has(key) && !options.context && count + saved.size === 0 && selector.allowReuse) {
-                  retried.add(key);
-                  order.push({ entry: [key, choices], early: false });
-                  deferredRows = true;
-                  break selectorChoices;
-                }
-                if (!add) {
-                  // An entry form the site kept open (it refuses to save one
-                  // with a required answer missing) disables every Add button.
-                  const kept = selector.allowReuse && [...visitedScopes].some((row) => row.isConnected && !fresh(row));
-                  lastReason = kept
-                    ? `The ${collection} entry form was not saved (the site kept it open, so its Add buttons stay disabled). Complete its required fields and save it.`
-                    : `No Add button was found for ${collection}.`;
-                  lastStatus = kept ? "failed" : "skipped";
-                  break selectorChoices;
-                }
-                if (options.isLocked?.(add)) {
-                  lastReason = "Field is locked by a trusted user edit.";
-                  lastStatus = "skipped";
-                  break selectorChoices;
-                }
-                if (isForbiddenClick(add, forbidden)) {
-                  lastReason = forbiddenReason(add);
-                  lastStatus = "failed";
-                  break selectorChoices;
-                }
-                const added = await (options.execute || defaultExecute)({
-                  element: add,
-                  globals,
-                  method: "click",
-                  signal: options.signal,
-                  values: [],
-                });
-                if (!added) {
-                  lastReason = `The ${collection} Add button was not accepted.`;
-                  lastStatus = "failed";
-                  break selectorChoices;
-                }
-                addedRows.add(index);
-              }
-              const confirmation = paths(selector.confirmAddedPath).map(
-                substituteIndex,
-              );
-              if (confirmation.length)
-                scope = await waitFor(
-                  root,
-                  confirmation,
-                  context,
-                  selector.time ?? 5_000,
-                  false,
-                  options,
-                );
-              // A confirmation can name a field inside the new row
-              // (SuccessFactors' points at the row's Company input); the row
-              // itself is what its fields are found in.
-              if (scope) {
-                const confirmed = scope;
-                scope =
-                  containerPaths
-                    .flatMap((path) => queryXPathAll(root, substituteIndex(path), context))
-                    .find((row) => row === confirmed || row.contains(confirmed)) ||
-                  detectedScopes().find((row) => row === confirmed || row.contains(confirmed)) ||
-                  confirmed;
-              }
-              // The confirmation is index-keyed, and with the page's rows
-              // matched out of order it names one of them: one employer's
-              // SuccessFactors had Penn State's row first, MSU was added as the
-              // first entry, and MSU's school went into Penn State's row before
-              // the new one was drawn. Only a new row will do.
-              if (scope && knownRow(scope)) scope = undefined;
-              // Accept a newly rendered row that structural detection can see.
-              if (!scope) {
-                const deadline = (options.now?.() ?? Date.now()) + (selector.time ?? 5_000);
-                while (!scope && (options.now?.() ?? Date.now()) < deadline) {
-                  await sleep(options.pollMs ?? 100, options.signal);
-                  scope = [
-                    ...containerPaths.flatMap((path) => queryXPathAll(root, substituteIndex(path), context)),
-                    ...pageRows(),
-                  ].find((row) => !knownRow(row));
-                }
-              }
-              if (!scope) {
-                lastReason = `The added ${collection} row was not confirmed.`;
-                lastStatus = "failed";
-                break selectorChoices;
-              }
-              knownRows.push(scope);
-            }
-            // Oracle opens every entry's form in the same container. It is
-            // used again only once empty (the entry before was saved): an
-            // unsaved entry still showing its values is never overwritten.
-            if (!scope || (visitedScopes.has(scope) && !(selector.allowReuse && fresh(scope)))) continue;
-            visitedScopes.add(scope);
-            // Whose entry this form is, for the page-wide fill to read: it
-            // wrote row 0's school and major into the form opened for row 1.
-            scope.setAttribute("data-lane-entry", `${collection}:${index}`);
-            // The page-wide fill leaves the form alone while the row rule
-            // writes it: both picked in Oracle's one shared list, and a
-            // pick landed in the other's box (dates saved with a month or
-            // year missing).
-            scope.setAttribute("data-lane-entry-busy", "");
-            let statuses: Awaited<ReturnType<typeof interpretConfig>>;
-            try {
-              statuses = await interpretConfig(
-              root,
-              url,
-              {
-                ...config,
-                containerPath: [],
-                containerRequired: false,
-                inputSelectors: historySelectors(
-                  selector.inputSelectors,
-                  collection,
-                  index,
-                ),
-              },
-              globals,
-              profile,
-              {
-                ...options,
-                context: scope,
-                valueContext: { collection, index },
-                used,
-              },
-            );
-            } finally {
-              scope.removeAttribute("data-lane-entry-busy");
-            }
-            count += statuses.filter(
-              (status) => status.status === "filled",
-            ).length;
-            // What the row's own rules left is still the row's: a page-wide
-            // rule (a second address's State and City) put the applicant's
-            // home in Penn State's row, and its school list then held only
-            // Arizona's.
-            for (const control of scope.querySelectorAll('input,select,textarea,[role="combobox"],[role="listbox"],button[aria-haspopup="listbox"]'))
-              used.add(control);
-            // Kept for diagnosis (issue reports): what each row could not do.
-            for (const status of statuses) {
-              if (status.status === "failed")
-                results.push({ ...status, key: `${key}[${index}].${status.key}` });
-              if (status.status === "filled" && status.caution) cautions.push(status.caution);
-            }
-          }
-          if (count || saved.size) {
-            results.push({ key, status: "filled", ...(cautions.length ? { caution: cautions.join(" ") } : {}) });
-            completed = true;
-            break;
-          }
-        }
-        lastReason = "Repeated section requires a profile row.";
-        lastStatus = "skipped";
-        continue;
+      {
+        const step = await fillRowChoice(state, { addedRows, choices, config, context, forbidden, globals, key, options, order, profile, results, retried, root, selector, url, used });
+        if (step === "break") break;
+        if (step === "continue") continue;
       }
       let values = selectorValues(
         key,
@@ -2722,8 +2237,8 @@ export async function interpretConfig(
         profile.work[options.valueContext?.index || 0]?.endDate === "";
       if (emptiesEnd) values = [""];
       if (!values.length && selector.valueRequired !== false) {
-        lastReason = "No confirmed profile value.";
-        lastStatus = "skipped";
+        state.lastReason = "No confirmed profile value.";
+        state.lastStatus = "skipped";
         continue;
       }
       // Try every candidate in preference order (as actions already do): an
@@ -2791,14 +2306,14 @@ export async function interpretConfig(
         );
         element = picked ? candidates[Number(picked.value.slice(5))] : undefined;
         if (!element) {
-          lastReason = `The site's list has no option for "${values[0]}".`;
-          lastStatus = "skipped";
+          state.lastReason = `The site's list has no option for "${values[0]}".`;
+          state.lastStatus = "skipped";
           continue;
         }
         if (element.getAttribute("aria-checked") === "true") {
           options.onConfirmed?.(element);
           results.push({ key, status: "skipped", reason: "The site's value is already right." });
-          completed = true;
+          state.completed = true;
           break;
         }
       }
@@ -2816,39 +2331,39 @@ export async function interpretConfig(
       // (signatures.ts): a typed name there signs for them.
       const signs = signatureField(element);
       if (signs && !signingAllowed(profile.signatures, signs)) {
-        lastReason = signatureLeftReason(signs);
-        lastStatus = "skipped";
+        state.lastReason = signatureLeftReason(signs);
+        state.lastStatus = "skipped";
         continue;
       }
       if (/^(work_auth|sponsorship)$/.test(key.replace(/_[234]$/, "")) &&
           /^does your work authorization\b.*\binvolve (cpt|opt)\b/i.test(questionText(element))) {
-        lastReason = "Generic authorization does not confirm CPT or OPT immigration status.";
-        lastStatus = "skipped";
+        state.lastReason = "Generic authorization does not confirm CPT or OPT immigration status.";
+        state.lastStatus = "skipped";
         continue;
       }
       if (key.replace(/_[234]$/, "") === "relocation" &&
           /^(please )?(provide|enter)\b.*\bpermanent address\b/i.test(questionText(element))) {
-        lastReason = "A permanent address is not a willingness-to-relocate answer.";
-        lastStatus = "skipped";
+        state.lastReason = "A permanent address is not a willingness-to-relocate answer.";
+        state.lastStatus = "skipped";
         continue;
       }
       if (key.replace(/_[234]$/, "") === "sponsorship" &&
           /\bassist/i.test(questionText(element)) &&
           !/sponsor|visa|authori[sz]|\b(require|need)\b.*\bassistance\b/i.test(questionText(element))) {
-        lastReason = "Assistance in an unrelated question is not visa sponsorship.";
-        lastStatus = "skipped";
+        state.lastReason = "Assistance in an unrelated question is not visa sponsorship.";
+        state.lastStatus = "skipped";
         continue;
       }
       if (/^(work_auth|sponsorship)$/.test(key.replace(/_[234]$/, "")) &&
           /\b(proof|document\w*|temporary|permit type)\b/i.test(questionText(element))) {
-        lastReason = "Authorization does not confirm documentary proof or immigration status.";
-        lastStatus = "skipped";
+        state.lastReason = "Authorization does not confirm documentary proof or immigration status.";
+        state.lastStatus = "skipped";
         continue;
       }
       const otherCountry = authorizationElsewhere(key, element, profile);
       if (otherCountry) {
-        lastReason = otherCountry;
-        lastStatus = "skipped";
+        state.lastReason = otherCountry;
+        state.lastStatus = "skipped";
         continue;
       }
       // Leave sponsorship-worded questions to the sponsorship key, which owns
@@ -2857,16 +2372,16 @@ export async function interpretConfig(
         key.replace(/_[234]$/, "") === "work_auth" &&
         asksForSponsorship(element)
       ) {
-        lastReason = "This question asks whether sponsorship is required.";
-        lastStatus = "skipped";
+        state.lastReason = "This question asks whether sponsorship is required.";
+        state.lastStatus = "skipped";
         continue;
       }
       // A positive authorization-without-sponsorship question has the
       // opposite polarity of sponsorship. Let confirmed semantic matching
       // answer it; the sponsorship selector must not write a bare No.
       if (key.replace(/_[234]$/, "") === "sponsorship" && /\bwithout\b.*\bsponsor/i.test(questionText(element))) {
-        lastReason = "This question asks whether the applicant can work without sponsorship.";
-        lastStatus = "skipped";
+        state.lastReason = "This question asks whether the applicant can work without sponsorship.";
+        state.lastStatus = "skipped";
         continue;
       }
       // A name asked of someone else is not the applicant's: Greenhouse's
@@ -2875,14 +2390,14 @@ export async function interpretConfig(
       // applicant's.
       if (/^(?:first_name|last_name|full_name|middle_name|preferred_first_name|preferred_last_name|preferred_name)$/.test(key.replace(/_[234]$/, "")) &&
           /\brefer(?:red|ral|rer|ring)?\b|\bemergency\b|\btheir\b|\b(?:spouse|relative|recruiter|hiring manager)\b/i.test(questionText(element))) {
-        lastReason = "This asks for someone else's name, not the applicant's.";
-        lastStatus = "skipped";
+        state.lastReason = "This asks for someone else's name, not the applicant's.";
+        state.lastStatus = "skipped";
         continue;
       }
       if (/^(?:current_company_name|company_name|current_company)$/.test(key.replace(/_[234]$/, "")) &&
           /non[ -]?(?:compete|disclosure|solicitation)|post[ -]?employment agreement/i.test(questionText(element))) {
-        lastReason = "An employment agreement is not the applicant's company name.";
-        lastStatus = "skipped";
+        state.lastReason = "An employment agreement is not the applicant's company name.";
+        state.lastStatus = "skipped";
         continue;
       }
       // Generic date fallbacks ("any iCIMS year box") must not put a
@@ -2897,14 +2412,14 @@ export async function interpretConfig(
         (/^(grad|end)/.test(key) && start && !end) ||
         (/^start/.test(key) && end && !start)
       ) {
-        lastReason = "This field holds a different date.";
-        lastStatus = "skipped";
+        state.lastReason = "This field holds a different date.";
+        state.lastStatus = "skipped";
         continue;
       }
       if (!selector.allowReuse) used.add(element);
       if (options.isLocked?.(element)) {
-        lastReason = "Field is locked by a trusted user edit.";
-        lastStatus = "skipped";
+        state.lastReason = "Field is locked by a trusted user edit.";
+        state.lastStatus = "skipped";
         continue;
       }
       // Custom dropdowns can retain their selected option in a hidden list.
@@ -2925,13 +2440,13 @@ export async function interpretConfig(
         )
       ) {
         results.push({ key, status: "skipped", reason: "The configured option is already selected." });
-        completed = true;
+        state.completed = true;
         break;
       }
       // Only a date the site put there is emptied, and only when there is one.
       if (emptiesEnd && (!textValue(element).trim() || !options.isReplaceable?.(element))) {
         results.push({ key, status: "skipped", reason: "A current job has no end date." });
-        completed = true;
+        state.completed = true;
         break;
       }
       // A site-filled value that is already the right one is left alone:
@@ -2953,7 +2468,7 @@ export async function interpretConfig(
         if (current && values.some(same) && element.getAttribute("aria-invalid") !== "true" && !childListUnloaded(element)) {
           options.onConfirmed?.(element);
           results.push({ key, status: "skipped", reason: "The site's value is already right." });
-          completed = true;
+          state.completed = true;
           break;
         }
       }
@@ -2967,354 +2482,17 @@ export async function interpretConfig(
         const current = textValue(element).trim();
         if (current && !values.some((value) => value.trim() === current)) {
           results.push({ key, status: "skipped", reason: "The site's list already holds a pick." });
-          completed = true;
+          state.completed = true;
           break;
         }
       }
-      try {
-        if (options.signal?.aborted)
-          throw new DOMException("Aborted", "AbortError");
-        let accepted = true;
-        let unpicked = false;
-        // A pick that is the closest the site lists, not the profile's own.
-        let approximate: string | undefined;
-        // Values searched one by one that the site's list did not take.
-        const notPicked: string[] = [];
-        // The site's own list, where the rule names it: the wordings it holds
-        // are tried first, in its spelling, and from a whole list, only those.
-        const site = selector.optionsSource && values.length
-          ? await options.listOptions?.(selector.optionsSource, values).catch(() => undefined)
-          : undefined;
-        const onList = site ? listedNames(values, site) : [];
-        if (onList.length) values = site!.complete ? onList : [...new Set([...onList, ...values])];
-        // A whole list with none of them: searching each wording finds nothing.
-        const unlisted = Boolean(site?.complete) && !onList.length;
-        options.onField?.(element, key);
-        // A list already showing one of its answers (a second fill of the
-        // step) is not opened again: Workday's Degree was left open over the
-        // form. Checked before any way
-        // of opening it: the search-dropdown handling pressed Workday's Degree
-        // button showing "Masters".
-        const showing = !isTag(element, "input") && !isTag(element, "textarea") ? normalize(textValue(element) || "") : "";
-        if (!selector.everyValue && showing && selector.actions?.some((action) => action.path) && values.some((value) => normalize(value) === showing)) {
-          options.onConfirmed?.(element);
-          results.push({ key, status: "filled" });
-          completed = true;
-          break;
-        }
-        const searched = /^(school|major|degree|name|discipline|country|state|education)$/.test(key) || selector.valueKey === "street_listing"
-          ? await viaSearchDropdown(element, values, globals, options)
-          : "unsupported";
-        if (searched === "selected") {
-          results.push({ key, status: "filled" });
-          completed = true;
-          break;
-        }
-        if (searched === "no-match")
-          throw new Error("No list option matches the confirmed answer.");
-        const outcome = await viaReactSelect(element, values, globals, options);
-        if (outcome === "skipped") {
-          lastReason = "Field already has a value.";
-          lastStatus = "skipped";
-          continue;
-        }
-        if (outcome === "no-match")
-          throw new Error("No dropdown option matches the confirmed answer.");
-        if (outcome === "selected") {
-          // Handled through the component; configured clicks are not replayed.
-        } else if (selector.actions?.length) {
-          // A search box that was typed into, whose pick from the site's list
-          // then found nothing to press: the text is on the page, but the site
-          // holds no answer (Lever keeps the chosen location in a hidden
-          // field). Not a failure, and not silent either. Only for a pick the
-          // rule marks pickRequired: elsewhere typed text can be the answer.
-          const typing = /^(default|defaultWithoutBlur|jQuery|react|keyType|trustedType|trustedSearch|trustedChoose|setValue)$/;
-          const picks = (action: FillAction) =>
-            Boolean(action.pickRequired && action.path) && (["click", "reactClick"].includes(action.method || "") || /^(mousedown|click)$/.test(action.event || ""));
-          // browse: the list opened with nothing typed, the pick made from
-          // the whole of it, its options already loaded.
-          const runActions = async (actionValues: string[], browse = false) => {
-            let typed = false;
-            unpicked = false;
-            for (const configured of selector.actions!) {
-              if (browse && !configured.path && (configured.event || typing.test(configured.method || config.defaultMethod))) continue;
-              const action = browse && configured.path && configured.time ? { ...configured, time: Math.min(configured.time, 2_500) } : configured;
-              const missed = () => {
-                if (typed && picks(action)) unpicked = true;
-              };
-              try {
-                const actionAccepted = await runAction(
-                  action,
-                  element,
-                  configuredPaths[0] || paths(selector.path)[0] || ".",
-                  actionValues,
-                  root,
-                  context,
-                  forbidden,
-                  globals,
-                  options,
-                );
-                if (!actionAccepted && !action.allowFailure)
-                  throw new Error("Configured action was not accepted.");
-                if (!actionAccepted) missed();
-                else if (!action.path && !action.event && typing.test(action.method || config.defaultMethod)) typed = true;
-                else if (picks(action)) unpicked = false;
-              } catch (error) {
-                if (isAbortError(error)) throw error;
-                if (!action.allowFailure) throw error;
-                missed();
-              }
-            }
-          };
-          // A search typed from the first value can find nothing ("United
-          // States of America" where the site lists "United States"); the
-          // next few values are typed in turn until one is found and picked.
-          const typesThenPicks =
-            !selector.everyValue &&
-            values.length > 0 &&
-            selector.actions.some((action) =>
-              /^(default|defaultWithoutBlur|keyType|trustedType|trustedSearch|trustedChoose)$/.test(action.method || ""),
-            ) &&
-            selector.actions.some((action) =>
-              action.rankedPick || paths(action.path).some((path) => /%(LOWER|UPPER)?VALUE%/.test(path)),
-            );
-          if (typesThenPicks) {
-            // Search confirmed names before short codes. A missing named
-            // field of study never falls back to Other: in a Workday list it
-            // takes the closest related field, with a caution (below).
-            const extends_ = (value: string) =>
-              values.some((other) => other !== value && normalize(other).startsWith(`${normalize(value)} `));
-            const rank = (value: string) => (extends_(value) ? 0 : value.trim().length <= 3 ? 2 : 1);
-            const attempts = [...values.slice(0, 4)].sort((a, b) => rank(a) - rank(b));
-            // Already holding one of them (an earlier pass picked it): typing
-            // again would only reopen the list over a finished answer.
-            const current = normalize(textValue(element) || "");
-            if (current && attempts.some((attempt) => normalize(attempt) === current)) {
-              results.push({ key, status: "filled" });
-              completed = true;
-              break;
-            }
-            let failure: unknown;
-            let picked = false;
-            // A field of study in a list of picks (Workday's): typing finds
-            // nothing to pick when the site lists none of its wordings, and
-            // the typed text is dropped when the box loses focus. Each try is
-            // judged by the pick it left, and with none, the closest standard
-            // field the list holds is tried (relatedFieldsOfStudy).
-            const pickBox = element.closest('[data-automation-id="multiSelectContainer"]');
-            const studyField = Boolean(pickBox) && /^(major|field_of_study|discipline)(_[234])?$/.test(selector.valueKey || key);
-            const holdsPick = (wanted: string[]) =>
-              [...(pickBox?.querySelectorAll('[data-automation-id="selectedItem"]') || [])].some((item) => {
-                const shown = normalize(item.getAttribute("title") || item.textContent || "");
-                return Boolean(shown) && wanted.some((value) => normalize(value) === shown);
-              });
-            const clearSearch = () =>
-              (options.execute || defaultExecute)({ element, globals, method: "clearValue", signal: options.signal, values: [] }).catch(() => false);
-            // Workday searches for the text anywhere in a name: a longer
-            // wording holding one that found nothing cannot find more, and
-            // each empty search costs about 20 s of the pass.
-            const foundNothing: string[] = [];
-            let browsed = false;
-            if (studyField && unlisted) failure = new Error(`The site's list has no "${values[0]}".`);
-            for (const first of attempts) {
-              if (studyField && unlisted) break;
-              if (studyField && foundNothing.some((term) => normalize(first).includes(normalize(term)))) continue;
-              try {
-                await runActions([first, ...values.filter((value) => value !== first)]);
-                // Workday adds the pick a moment after its option is clicked;
-                // judged at once, one employer's "Data Science" read as not found and
-                // its search was cleared.
-                for (let waited = 0; studyField && !holdsPick(values) && waited < 1_500; waited += 100)
-                  await sleep(100, options.signal);
-                if (studyField && !holdsPick(values)) {
-                  foundNothing.push(first);
-                  throw new Error(`The site's list has no "${first}".`);
-                }
-                picked = true;
-                break;
-              } catch (error) {
-                if (isAbortError(error)) throw error;
-                // A pick made by the search itself (its Enter chose the one
-                // match) is a pick: the next wording's first step cleared it,
-                // and one employer's "Data Science" became "Computer Science".
-                if (pickBox && holdsPick(values)) {
-                  picked = true;
-                  break;
-                }
-                failure = error;
-                // The site's search found nothing for a name its list holds
-                // (SuccessFactors finds no "Telangana" among India's states,
-                // which list it): the answer is picked from the whole list
-                // before other spellings are searched the same way.
-                const nothing = !studyField && !browsed && listFoundNothing(element);
-                // A list left open answers the next field's search.
-                dismissPopup(element);
-                if (studyField) await clearSearch();
-                if (nothing) {
-                  browsed = true;
-                  await clearSearch();
-                  try {
-                    await runActions(values, true);
-                    picked = true;
-                    break;
-                  } catch (browseError) {
-                    if (isAbortError(browseError)) throw browseError;
-                    dismissPopup(element);
-                  }
-                }
-              }
-            }
-            // From the site's whole list, only the related fields it holds.
-            const closest = relatedFieldsOfStudy(values[0] || "");
-            if (!picked && studyField)
-              for (const related of site?.complete ? listedNames(closest, site) : closest) {
-                try {
-                  await runActions([related]);
-                  if (!holdsPick([related])) throw new Error(`The site's list has no "${related}".`);
-                  picked = true;
-                  approximate = related;
-                  break;
-                } catch (error) {
-                  if (isAbortError(error)) throw error;
-                  dismissPopup(element);
-                  await clearSearch();
-                }
-              }
-            // A pick made, focus leaves the search box: the next look at the
-            // page takes a focused field for one the applicant is in, and
-            // reported this one unfilled (OpenAI's location on Ashby too).
-            if (picked && studyField && element.ownerDocument.activeElement === element) (element as HTMLElement).blur();
-            if (!picked) {
-              // Never leave typed search text behind as if it were an answer.
-              await (options.execute || defaultExecute)({
-                element,
-                globals,
-                method: "clearValue",
-                signal: options.signal,
-                values: [],
-              }).catch(() => false);
-              dismissPopup(element);
-              // Nor the focus the search took: the page's own selection of
-              // this field refuses one it finds focused by something else.
-              if (element.ownerDocument.activeElement === element) (element as HTMLElement).blur();
-              throw failure;
-            }
-          } else {
-            // A list already showing one of its answers (a second fill of the
-            // step) is not opened again: Workday's Degree was left open over
-            // the form.
-            // A read-only box its picker already set (Tesla's start date) is done: opening its calendar again
-            // and clicking the chosen day cleared it.
-            if (!selector.everyValue && isTag(element, "input") && (element as HTMLInputElement).readOnly && (textValue(element) || "").trim() && selector.actions.some((action) => action.path)) {
-              results.push({ key, status: "filled" });
-              completed = true;
-              break;
-            }
-            const showing = !isTag(element, "input") && !isTag(element, "textarea") ? normalize(textValue(element) || "") : "";
-            if (!selector.everyValue && showing && selector.actions.some((action) => action.path) && values.some((value) => normalize(value) === showing)) {
-              results.push({ key, status: "filled" });
-              completed = true;
-              break;
-            }
-            // Each value searched in turn (Workday's skills, one search each):
-            // a limit keeps a long profile list from taking minutes.
-            // A skill is searched by its own name and picked under the
-            // library's (skill-names.ts): "C#" as "C Sharp (Programming
-            // Language)".
-            const skillList = selector.everyValue && /^skills?$/.test(selector.valueKey || key);
-            if (skillList) for (const action of selector.actions) siteOrdered.add(action);
-            const valueBatches = selector.everyValue
-              ? values.slice(0, selector.limit ?? values.length).map((value) => [value, ...(skillList ? skillNames(value) : [])])
-              : [values];
-            // In a list of picks, one it already holds is not searched again
-            // (a second fill pressed nothing for each and waited 3 s), and one
-            // searched that left no pick is named for the applicant: the site
-            // listed 16 of a profile's first 25 skills, and the other nine went
-            // unmentioned. Its own wording may add a kind:
-            // "Python (Programming Language)".
-            const pickBox = selector.everyValue ? element.closest('[data-automation-id="multiSelectContainer"]') : null;
-            const held = (value: string) =>
-              [...(pickBox?.querySelectorAll('[data-automation-id="selectedItem"]') || [])].some((item) => {
-                const shown = (item.getAttribute("title") || item.textContent || "").trim().toLowerCase();
-                return [value, ...(skillList ? skillNames(value) : [])].some((name) => {
-                  const wanted = name.trim().toLowerCase();
-                  return shown === wanted || shown.startsWith(`${wanted} (`) || shown.endsWith(` (${wanted})`);
-                });
-              });
-            try {
-              for (const actionValues of valueBatches) {
-                if (pickBox && held(actionValues[0])) continue;
-                await runActions(actionValues);
-                if (pickBox && !held(actionValues[0])) notPicked.push(actionValues[0]);
-              }
-            } catch (error) {
-              if (!isAbortError(error)) await closeOpenedList(element, options);
-              // A pass that ends mid-search (its time is up, or a pause)
-              // skips the steps that empty the box: the typed skill stayed,
-              // the site committed it when focus moved on, and that change
-              // read as the applicant's edit and paused the fill.
-              else if (pickBox) clearSearchBox(element);
-              throw error;
-            }
-          }
-        } else {
-          const method = selector.method || config.defaultMethod;
-          if (
-            ["click", "reactClick"].includes(method) &&
-            isForbiddenClick(element, forbidden, true, options.context)
-          )
-            throw new Error(forbiddenReason(element));
-          if (
-            !nonMutatingMethods.has(method) &&
-            !["click", "reactClick", "event"].includes(method) &&
-            textValue(element) &&
-            !options.isReplaceable?.(element)
-          ) {
-            lastReason = "Field already has a value.";
-            lastStatus = "skipped";
-            continue;
-          }
-          accepted = await (options.execute || defaultExecute)({
-            element,
-            globals,
-            method,
-            signal: options.signal,
-            values: [...values],
-          });
-        }
-        if (!accepted)
-          throw new Error("Site did not accept the configured value.");
-        // A search whose optional pick found nothing ("No results") leaves
-        // its list open, and an open list hides the rest of the form from
-        // the next look at it (Ashby, Talos's Location; eval).
-        const opened = element.matches('[aria-expanded="true"]')
-          ? element
-          : element.querySelector('[role="combobox"][aria-expanded="true"]');
-        if (opened) dismissPopup(opened);
-        // The question's own heading where the site marks one (Lever wraps
-        // the whole widget, list included, in the label).
-        const heading = element.closest("label, fieldset")?.querySelector('legend, [class*="label" i]')?.textContent;
-        const asked = (heading || questionText(element)).replace(/[*✱]/g, "").replace(/\s+/g, " ").trim().slice(0, 80) || key;
-        results.push({
-          key,
-          status: "filled",
-          ...(approximate
-            ? { caution: `${asked}: the site lists no "${values[0]}", so the closest field it lists, "${approximate}", was picked. Change it if another fits better.` }
-            : unpicked ? { caution: `${asked}: typed, but nothing was picked from the site's own list. Choose it there yourself.` }
-            : notPicked.length ? { caution: `${asked}: the site's list has no ${notPicked.map((value) => `"${value}"`).join(", ")}. Add any that fit under another name there.` } : {}),
-        });
-        completed = true;
-        break;
-      } catch (error) {
-        if (isAbortError(error)) throw error;
-        lastReason = (error as Error).message || "Configured action failed.";
-        dismissPopup(element);
-        // A failed attempt must not keep the control reserved: the accessible
-        // fallback (or another selector) should still get a chance at it.
-        if (!selector.allowReuse) used.delete(element);
+      {
+        const step = await applyChoice(state, { config, configuredPaths, context, element, forbidden, globals, key, options, results, root, selector, used, values });
+        if (step === "break") break;
+        if (step === "continue") continue;
       }
     }
-    if (deferredRows) continue;
+    if (state.deferredRows) continue;
     // Configured row rules can report success while leaving fields untouched
     // (their conditions skip every step), so the row fallback also runs after a
     // successful pass and fills only what is still empty.
@@ -3329,21 +2507,21 @@ export async function interpretConfig(
           used,
           options,
         );
-        if (count && !completed) {
+        if (count && !state.completed) {
           results.push({ key, status: "filled" });
-          completed = true;
+          state.completed = true;
         }
       } catch (error) {
         if (isAbortError(error)) throw error;
-        lastReason =
+        state.lastReason =
           (error as Error).message || "Repeated section fallback failed.";
       }
     }
-    if (!completed) {
+    if (!state.completed) {
       const values = fallbackValues(key, profile, globals, options.valueContext);
       const found = values.length ? labeledFallback(key, context) : undefined;
       const otherCountry = found && authorizationElsewhere(key, found, profile);
-      if (otherCountry) lastReason = otherCountry;
+      if (otherCountry) state.lastReason = otherCountry;
       const element = otherCountry ? undefined : found;
       // A street box already holding the saved street (written "East" for the
       // saved "E.") is the answer: rewriting it only risks the site's reset.
@@ -3351,10 +2529,10 @@ export async function interpretConfig(
         used.add(element);
         options.onConfirmed?.(element);
         results.push({ key, status: "skipped", reason: "The site's value is already right." });
-        completed = true;
+        state.completed = true;
       }
       if (
-        !completed &&
+        !state.completed &&
         element &&
         !used.has(element) &&
         !options.isLocked?.(element) &&
@@ -3364,22 +2542,22 @@ export async function interpretConfig(
           if (await fillFallback(element, values, root, globals, options, key === "address" ? "trustedType" : "react")) {
             used.add(element);
             results.push({ key, status: "filled" });
-            completed = true;
+            state.completed = true;
           }
         } catch (error) {
           if (isAbortError(error)) throw error;
-          lastReason =
+          state.lastReason =
             (error as Error).message || "Accessible fallback failed.";
         }
       }
     }
-    if (!completed)
+    if (!state.completed)
       results.push({
         key,
-        status: options.signal?.aborted ? "skipped" : lastStatus,
+        status: options.signal?.aborted ? "skipped" : state.lastStatus,
         reason: options.signal?.aborted
           ? "Operation was cancelled."
-          : lastReason,
+          : state.lastReason,
       });
   }
   // No site config describes a references section, so this pass is the only
@@ -3415,6 +2593,894 @@ export async function interpretConfig(
     }
   }
   return results;
+}
+
+
+// What a rule's choices report as they are tried, shared with the parts
+// of interpretConfig that try them.
+type ChoiceState = {
+  lastReason: string;
+  lastStatus: "skipped" | "failed";
+  completed: boolean;
+  deferredRows: boolean;
+};
+
+// Part of interpretConfig, one choice of a rule: a rule for rows (an array of profile entries) or one that names input selectors of its own.
+// "break" or "continue" for the choices loop, or nothing to go on.
+async function fillRowChoice(
+  state: ChoiceState,
+  { addedRows, choices, config, context, forbidden, globals, key, options, order, profile, results, retried, root, selector, url, used }: {
+  addedRows: Set<number>;
+  choices: Selector[];
+  config: SiteConfig;
+  context: Element | Document;
+  forbidden: Set<Element>;
+  globals: GlobalConfig;
+  key: string;
+  options: InterpreterOptions;
+  order: { entry: InputSelector; early: boolean; }[];
+  profile: Profile;
+  results: FillStatus[];
+  retried: Set<string>;
+  root: Document;
+  selector: SelectorConfig;
+  url: string;
+  used: Set<Element>;
+  },
+): Promise<"break" | "continue" | undefined> {
+  if (selector.array || selector.inputSelectors) {
+    const collection =
+      key === "education"
+        ? "education"
+        : key === "experience"
+          ? "experience"
+          : undefined;
+    // Lists the profile keeps as plain values, one row each: languages,
+    // and the links a form's Websites section takes (Workday).
+    const list = key === "language" ? "languages" : key === "websites" ? "websites" : undefined;
+    if (list && selector.array && selector.inputSelectors) {
+      // A link the page already holds (the site read it from the resume)
+      // is not added again, and a row holding one is left as it is: one employer's
+      // Workday listed GitHub twice.
+      const linkKey = (value: string) => value.trim().toLowerCase().replace(/^[a-z][a-z0-9+.-]*:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+      const held = (row: Element) =>
+        [...row.querySelectorAll<HTMLInputElement>('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"])')].map((input) => input.value).filter((value) => value.trim());
+      // A Websites section a Workday tenant titles "an employer" ("Add any
+      // relevant websites.") is for that link alone: five links were
+      // given there, and rows holding other links are deleted.
+      const linkedInOnly = list === "websites" && Boolean(root.querySelector('[role="group"][aria-labelledby="LinkedIn-section"]'));
+      const isLinkedIn = (value: string) => /(^|\.)linkedin\.com$/.test(linkKey(value).split("/")[0]);
+      if (linkedInOnly) {
+        for (let removed = 0; removed < 10; removed++) {
+          const stray = [...root.querySelectorAll('[role="group"][aria-labelledby^="LinkedIn-"][aria-labelledby$="-panel"]')]
+            .find((row) => held(row).length && !held(row).some(isLinkedIn));
+          const remove = stray && [...stray.querySelectorAll("button")].find((button) => /^\s*delete\s*$/i.test(button.textContent || ""));
+          if (!stray || !remove) break;
+          await (options.execute || defaultExecute)({ element: remove, guardElement: stray, globals, method: "click", signal: options.signal, values: [] });
+          for (let waited = 0; stray.isConnected && waited < 2_000; waited += 100) await sleep(100, options.signal);
+          if (stray.isConnected) break;
+        }
+      }
+      const onPage = new Set(
+        list === "websites"
+          ? paths(selector.containerPath)
+              .flatMap((path) => Array.from({ length: 20 }, (_, n) => queryXPathAll(root, path.replaceAll("%INDEX0%", String(n)).replaceAll("%NUMBER0%", String(n + 1)), context)).flat())
+              .flatMap(held)
+              .map(linkKey)
+          : [],
+      );
+      const items = list === "languages"
+        ? profileLanguages(profile.languages).map((row) => row.language)
+        : linksToShare(config, profile, root, context).filter((link) => !onPage.has(linkKey(link)) && (!linkedInOnly || isLinkedIn(link)));
+      let count = 0;
+      // What a row's fill wants the applicant to look at (a closest pick).
+      const cautions: string[] = [];
+      const visited = new Set<Element>();
+      // A language Oracle already lists as a saved tile ("English (United
+      // States)", kept by an earlier fill) is not added again: its list no
+      // longer offers that entry, and a second row sat open on the other
+      // Englishes (Higher).
+      const savedLanguages = list === "languages"
+        ? (await removeDamagedTiles(paths(selector.savedRowPath).flatMap((path) => queryXPathAll(root, path, context)), globals, options))
+            .map((tile) => ` ${plainText(tile.textContent)} `)
+        : [];
+      const alreadySaved = (item: string) => Boolean(plainText(item)) && savedLanguages.some((tile) => tile.includes(` ${plainText(item)} `));
+      for (let index = 0; index < Math.min(items.length, selector.limit ?? items.length); index++) {
+        if (list === "languages" && alreadySaved(items[index])) continue;
+        const substitute = (path: string) =>
+          path.replaceAll("%INDEX0%", String(index)).replaceAll("%NUMBER0%", String(index + 1));
+        const free = (row: Element) => !visited.has(row) && !(list === "websites" && held(row).length);
+        // Its own number first; for links, any empty row the site
+        // numbered otherwise (the first one held the site's GitHub, and
+        // the row added after it was confirmed by the first's number).
+        const rowAt = () =>
+          paths(selector.containerPath)
+            .flatMap((path) => queryXPathAll(root, substitute(path), context))
+            .find(free) ||
+          (list === "websites"
+            ? paths(selector.containerPath)
+                .flatMap((path) => Array.from({ length: 20 }, (_, n) => queryXPathAll(root, path.replaceAll("%INDEX0%", String(n)).replaceAll("%NUMBER0%", String(n + 1)), context)).flat())
+                .find(free)
+            : undefined);
+        let scope = rowAt();
+        if (!scope && selector.addButtonPath) {
+          const add = paths(selector.addButtonPath)
+            .flatMap((path) => queryXPathAll(root, path, context))
+            .find((candidate) => candidate.isConnected);
+          if (!add || options.isLocked?.(add) || isForbiddenClick(add, forbidden)) break;
+          if (!(await (options.execute || defaultExecute)({ element: add, globals, method: "click", signal: options.signal, values: [] }))) break;
+          const confirmed = await waitFor(root, paths(selector.confirmAddedPath).map(substitute), context, selector.time ?? 5_000, false, options);
+          scope = rowAt() || (confirmed && (list !== "websites" || free(confirmed)) ? confirmed : undefined);
+          // A site whose rows are all alike (Oracle's links) confirms the
+          // first row at once, a row held by a link; the one just added
+          // is drawn a moment later.
+          if (!scope && list === "websites") {
+            const deadline = (options.now?.() ?? Date.now()) + (selector.time ?? 5_000);
+            while (!scope && (options.now?.() ?? Date.now()) < deadline) {
+              await sleep(options.pollMs ?? 100, options.signal);
+              scope = rowAt();
+            }
+          }
+        }
+        if (!scope) {
+          state.lastReason = `The added ${list} row was not confirmed.`;
+          state.lastStatus = "failed";
+          break;
+        }
+        visited.add(scope);
+        const statuses = await interpretConfig(
+          root,
+          url,
+          { ...config, containerPath: [], containerRequired: false, inputSelectors: flattenGroups(selector.inputSelectors) },
+          globals,
+          profile,
+          { ...options, context: scope, valueContext: { collection: list, index, item: items[index] }, used },
+        );
+        count += statuses.filter((status) => status.status === "filled").length;
+        for (const status of statuses) {
+          if (status.status === "failed") results.push({ ...status, key: `${key}[${index}].${status.key}` });
+          if (status.status === "filled" && status.caution) cautions.push(status.caution);
+        }
+      }
+      if (count) {
+        results.push({ key, status: "filled", ...(cautions.length ? { caution: cautions.join(" ") } : {}) });
+        state.completed = true;
+        return "break";
+      }
+      state.lastReason ||= "Repeated section requires a profile row.";
+      state.lastStatus = "skipped";
+      return "continue";
+    }
+    if (collection && selector.inputSelectors) {
+      const rows =
+        collection === "education" ? profile.education : profile.work;
+      let count = 0;
+      // A row's cautions (a closest pick, a search left unpicked) were
+      // dropped with its count; the applicant needs to see them.
+      const cautions: string[] = [];
+      const visitedScopes = new Set<Element>();
+      // Every row on the page, in the order they appear.
+      const pageRows = () => {
+        const addButton = paths(selector.addButtonPath)
+          .flatMap((path) => queryXPathAll(root, path, context))
+          .find((candidate) => candidate.isConnected);
+        const detected = repeatedScopes(collection, context).filter(
+          (candidate) => !addButton || !candidate.contains(addButton),
+        );
+        // Row numbers in container ids are the site's own (iCIMS numbers
+        // its rows 3, 1, 2 down the page), so collect every row and use
+        // the order they appear in.
+        const found: Element[] = [];
+        for (let number = 0; number <= rows.length + 20; number++)
+          for (const path of paths(selector.containerPath))
+            for (const scope of queryXPathAll(
+              root,
+              path
+                .replaceAll("%INDEX0%", String(number))
+                .replaceAll("%NUMBER0%", String(number)),
+              context,
+            ))
+              // A fallback can name an ancestor of an already found row
+              // (one employer's education section); it is still the same entry.
+              if (!found.some((row) => row === scope || row.contains(scope) || scope.contains(row))) found.push(scope);
+        for (const scope of detected)
+          if (
+            !found.includes(scope) &&
+            !found.some((row) => row.contains(scope) || scope.contains(row))
+          )
+            found.push(scope);
+        return found.sort((a, b) =>
+          a.compareDocumentPosition(b) & Node.DOCUMENT_POSITION_FOLLOWING ? -1 : 1,
+        );
+      };
+      const existingScopes = pageRows();
+      // Rows that were on the page, or added already, are other entries:
+      // a row added for this one must be a new one.
+      const knownRows = [...existingScopes];
+      // A container a site reuses for each entry (Oracle's, below) is new
+      // again once empty.
+      const fresh = (element: Element) =>
+        ![...element.querySelectorAll('input:not([type="hidden"]):not([type="checkbox"]):not([type="radio"]),textarea')].some(
+          (control) => (control as HTMLInputElement).value,
+        );
+      const knownRow = (row: Element) =>
+        !(selector.allowReuse && fresh(row)) && knownRows.some((known) => known === row || known.contains(row) || row.contains(known));
+      let matchedScopes = existingScopes.length
+        ? matchHistoryRows(collection, rows, existingScopes, (element) =>
+            Boolean(options.isReplaceable?.(element)),
+          )
+        : new Map<number, Element>();
+      // Oracle shows the entries already saved to the candidate's profile
+      // as tiles with no fields: the title and subtitle name the job and
+      // employer (or major) and its dates. A profile row a tile already
+      // names is kept, not added again (egug.fa.us2.oraclecloud.com).
+      // Each piece of text on its own: Workable's cards put "Title" and
+      // "Software Engineer Intern" in elements with no space between
+      // them.
+      const tileText = (tile: Element) => {
+        const pieces: string[] = [];
+        const walker = tile.ownerDocument.createTreeWalker(tile, NodeFilter.SHOW_TEXT);
+        for (let node = walker.nextNode(); node; node = walker.nextNode()) pieces.push(node.textContent || "");
+        return pieces.join(" ");
+      };
+      const savedTileElements = await removeDamagedTiles(
+        paths(selector.savedRowPath).flatMap((path) => queryXPathAll(root, path, context)),
+        globals,
+        options,
+      );
+      // Oracle's timeline cards give the dates in words: "From March 2026 to
+      // No date provided". Read as a tile's "03 2026 present".
+      const monthNumbers = MONTH_NAMES_LOWER;
+      const datesAsNumbers = (text: string) =>
+        text
+          .replace(/\bfrom\s+(?=[a-z]+\s+\d{4})/gi, "")
+          .replace(/\s+to\s+(?=[a-z]+\s+\d{4}|no date)/gi, " ")
+          .replace(/\bno date provided\b/gi, "present")
+          .replace(/\b(january|february|march|april|may|june|july|august|september|october|november|december)\s+(\d{4})\b/gi, (_, month: string, year: string) => `${String(monthNumbers.indexOf(month.toLowerCase()) + 1).padStart(2, "0")} ${year}`);
+      const savedTiles = savedTileElements.map((tile) => ` ${plainText(datesAsNumbers(tileText(tile)))} `);
+      // A saved entry is an existing row too: Workable draws a new entry's
+      // editor first in its list, and the confirmation, by position, named
+      // the saved MSU card instead. Nothing of Penn State's went in, the
+      // editor was never saved, and MSU's name reached it from the page's
+      // first school.
+      knownRows.push(...savedTileElements.filter((tile) => !tile.querySelector('input:not([type="hidden"]),textarea,select')));
+      // Oracle's tile names the major and the dates, not the school
+      // ("Data Science 08/2025 - 05/2027"): a tile showing a row's start
+      // and end is that row (Higher, each refill added the
+      // entries again). A tile with no dates ("Unnamed Major") is none.
+      const monthYear = (value: string | undefined) => {
+        const found = value?.match(/^(\d{4})-(\d{2})/);
+        return found ? `${found[2]} ${found[1]}` : "";
+      };
+      const savedWithDates = (row: Profile["education"][number]) => {
+        const start = monthYear(row.startDate);
+        if (!start) return false;
+        const end = monthYear(row.endDate) || (row.endDate ? "" : "present");
+        return Boolean(end) && savedTiles.some((tile) => tile.includes(` ${start} ${end} `));
+      };
+      const saved = new Set(
+        rows.flatMap((row, index) => {
+          if (!savedTiles.length) return [];
+          if (savedWithDates(row)) return [index];
+          const subject = plainText(row.fieldOfStudy || row.title);
+          const organization = plainText(row.organization);
+          const year = row.startDate?.match(/\d{4}/)?.[0];
+          // The same school or employer from the same year is that row,
+          // however the tile names the subject: one employer's tile said "Data
+          // Science" for the profile's "M.S. Data Science, Analytics &
+          // Engineering", and the degree was added again.
+          return savedTiles.some(
+            (tile) =>
+              (Boolean(subject) &&
+                tile.includes(` ${subject} `) &&
+                ((Boolean(organization) && tile.includes(` ${organization} `)) ||
+                  (Boolean(year) && tile.includes(` ${year} `)))) ||
+              (Boolean(organization) && tile.includes(` ${organization} `) &&
+                Boolean(year) && tile.includes(` ${year} `)),
+          )
+            ? [index]
+            : [];
+        }),
+      );
+      // An entry already saved is no open row's: the rows still open
+      // are matched among the profile's unsaved ones only. An editor a
+      // cut-off pass left open (SmartRecruiters' second school, its fields in
+      // shadow roots no match could read) went by page order to the saved
+      // first school, the second was added again, and the open one was
+      // never saved.
+      // A saved entry's own card or tile is no editor either: Oracle's
+      // timeline cards were taken for the open row of the next entry,
+      // and the card, not a new form, was the one "filled".
+      const editors = existingScopes.filter((scope) => !savedTileElements.some((tile) => tile === scope || tile.contains(scope)));
+      if ((saved.size || editors.length < existingScopes.length) && existingScopes.length) {
+        const unsaved = rows.map((row, index) => ({ row, index })).filter(({ index }) => !saved.has(index));
+        const rematched = matchHistoryRows(collection, unsaved.map(({ row }) => row), editors, (element) =>
+          Boolean(options.isReplaceable?.(element)),
+        );
+        matchedScopes = new Map([...rematched].map(([at, scope]) => [unsaved[at].index, scope]));
+      }
+      options.note?.({
+        rows: collection,
+        profileRows: rows.length,
+        pageRows: existingScopes.length,
+        matched: [...matchedScopes.keys()],
+        ...(saved.size ? { saved: [...saved] } : {}),
+      });
+      for (
+        let index = 0;
+        index < Math.min(rows.length, selector.limit ?? rows.length);
+        index++
+      ) {
+        if (saved.has(index)) continue;
+        const substituteIndex = (path: string) =>
+          path
+            .replaceAll("%INDEX0%", String(index))
+            .replaceAll("%NUMBER0%", String(index + 1));
+        const containerPaths = paths(selector.containerPath);
+        // Workday numbers its rows arbitrarily ("education-184"), so a
+        // configured container path keyed on the row index often misses;
+        // structural detection finds the row either way. A section that
+        // holds the Add button is not a row.
+        const addButton = paths(selector.addButtonPath)
+          .flatMap((path) => queryXPathAll(root, path, context))
+          .find((candidate) => candidate.isConnected);
+        const detectedScopes = () =>
+          repeatedScopes(collection, context).filter(
+            (candidate) =>
+              (!addButton || !candidate.contains(addButton)) &&
+              !savedTileElements.some((tile) => tile === candidate || tile.contains(candidate)),
+          );
+        // A row an earlier entry was written into is that entry's, still
+        // open when its Save was refused: the next entry is added as its
+        // own. A path naming any open editor found the first school's
+        // again, and the second was never added (one employer's
+        // SmartRecruiters form).
+        const otherEntry = (row: Element) =>
+          visitedScopes.has(row) && !(selector.allowReuse && fresh(row));
+        let scope: Element | undefined = matchedScopes.size
+          ? matchedScopes.get(index)
+          : containerPaths.flatMap((path) =>
+              queryXPathAll(root, substituteIndex(path), context),
+            ).find((row) => !otherEntry(row)) || detectedScopes()[index];
+        if (scope && otherEntry(scope)) scope = undefined;
+        options.note?.({ rows: collection, index, scope: Boolean(scope), add: !scope && Boolean(selector.addButtonPath) });
+        if (!scope && selector.addButtonPath) {
+          if (!addedRows.has(index)) {
+            // Oracle opens one entry form at a time, work or education,
+            // and hides every Add button while one is open: the Add waits for the form before it
+            // to close, and a section that still has no Add button is
+            // tried again once the other sections have saved theirs.
+            const findAdd = () =>
+              paths(selector.addButtonPath)
+                .flatMap((path) => queryXPathAll(root, path, context))
+                .find((candidate) => candidate.isConnected && !candidate.closest("[hidden]"));
+            let add = findAdd();
+            for (
+              const deadline = (options.now?.() ?? Date.now()) + (retried.has(key) ? selector.time ?? 5_000 : 2_500);
+              !add && (options.now?.() ?? Date.now()) < deadline;
+            ) {
+              await sleep(options.pollMs ?? 100, options.signal);
+              add = findAdd();
+            }
+            if (!add && !retried.has(key) && !options.context && count + saved.size === 0 && selector.allowReuse) {
+              retried.add(key);
+              order.push({ entry: [key, choices], early: false });
+              state.deferredRows = true;
+              return "break";
+            }
+            if (!add) {
+              // An entry form the site kept open (it refuses to save one
+              // with a required answer missing) disables every Add button.
+              const kept = selector.allowReuse && [...visitedScopes].some((row) => row.isConnected && !fresh(row));
+              state.lastReason = kept
+                ? `The ${collection} entry form was not saved (the site kept it open, so its Add buttons stay disabled). Complete its required fields and save it.`
+                : `No Add button was found for ${collection}.`;
+              state.lastStatus = kept ? "failed" : "skipped";
+              return "break";
+            }
+            if (options.isLocked?.(add)) {
+              state.lastReason = "Field is locked by a trusted user edit.";
+              state.lastStatus = "skipped";
+              return "break";
+            }
+            if (isForbiddenClick(add, forbidden)) {
+              state.lastReason = forbiddenReason(add);
+              state.lastStatus = "failed";
+              return "break";
+            }
+            const added = await (options.execute || defaultExecute)({
+              element: add,
+              globals,
+              method: "click",
+              signal: options.signal,
+              values: [],
+            });
+            if (!added) {
+              state.lastReason = `The ${collection} Add button was not accepted.`;
+              state.lastStatus = "failed";
+              return "break";
+            }
+            addedRows.add(index);
+          }
+          const confirmation = paths(selector.confirmAddedPath).map(
+            substituteIndex,
+          );
+          if (confirmation.length)
+            scope = await waitFor(
+              root,
+              confirmation,
+              context,
+              selector.time ?? 5_000,
+              false,
+              options,
+            );
+          // A confirmation can name a field inside the new row
+          // (SuccessFactors' points at the row's Company input); the row
+          // itself is what its fields are found in.
+          if (scope) {
+            const confirmed = scope;
+            scope =
+              containerPaths
+                .flatMap((path) => queryXPathAll(root, substituteIndex(path), context))
+                .find((row) => row === confirmed || row.contains(confirmed)) ||
+              detectedScopes().find((row) => row === confirmed || row.contains(confirmed)) ||
+              confirmed;
+          }
+          // The confirmation is index-keyed, and with the page's rows
+          // matched out of order it names one of them: one employer's
+          // SuccessFactors had Penn State's row first, MSU was added as the
+          // first entry, and MSU's school went into Penn State's row before
+          // the new one was drawn. Only a new row will do.
+          if (scope && knownRow(scope)) scope = undefined;
+          // Accept a newly rendered row that structural detection can see.
+          if (!scope) {
+            const deadline = (options.now?.() ?? Date.now()) + (selector.time ?? 5_000);
+            while (!scope && (options.now?.() ?? Date.now()) < deadline) {
+              await sleep(options.pollMs ?? 100, options.signal);
+              scope = [
+                ...containerPaths.flatMap((path) => queryXPathAll(root, substituteIndex(path), context)),
+                ...pageRows(),
+              ].find((row) => !knownRow(row));
+            }
+          }
+          if (!scope) {
+            state.lastReason = `The added ${collection} row was not confirmed.`;
+            state.lastStatus = "failed";
+            return "break";
+          }
+          knownRows.push(scope);
+        }
+        // Oracle opens every entry's form in the same container. It is
+        // used again only once empty (the entry before was saved): an
+        // unsaved entry still showing its values is never overwritten.
+        if (!scope || (visitedScopes.has(scope) && !(selector.allowReuse && fresh(scope)))) continue;
+        visitedScopes.add(scope);
+        // Whose entry this form is, for the page-wide fill to read: it
+        // wrote row 0's school and major into the form opened for row 1.
+        scope.setAttribute("data-lane-entry", `${collection}:${index}`);
+        // The page-wide fill leaves the form alone while the row rule
+        // writes it: both picked in Oracle's one shared list, and a
+        // pick landed in the other's box (dates saved with a month or
+        // year missing).
+        scope.setAttribute("data-lane-entry-busy", "");
+        let statuses: Awaited<ReturnType<typeof interpretConfig>>;
+        try {
+          statuses = await interpretConfig(
+          root,
+          url,
+          {
+            ...config,
+            containerPath: [],
+            containerRequired: false,
+            inputSelectors: historySelectors(
+              selector.inputSelectors,
+              collection,
+              index,
+            ),
+          },
+          globals,
+          profile,
+          {
+            ...options,
+            context: scope,
+            valueContext: { collection, index },
+            used,
+          },
+        );
+        } finally {
+          scope.removeAttribute("data-lane-entry-busy");
+        }
+        count += statuses.filter(
+          (status) => status.status === "filled",
+        ).length;
+        // What the row's own rules left is still the row's: a page-wide
+        // rule (a second address's State and City) put the applicant's
+        // home in Penn State's row, and its school list then held only
+        // Arizona's.
+        for (const control of scope.querySelectorAll('input,select,textarea,[role="combobox"],[role="listbox"],button[aria-haspopup="listbox"]'))
+          used.add(control);
+        // Kept for diagnosis (issue reports): what each row could not do.
+        for (const status of statuses) {
+          if (status.status === "failed")
+            results.push({ ...status, key: `${key}[${index}].${status.key}` });
+          if (status.status === "filled" && status.caution) cautions.push(status.caution);
+        }
+      }
+      if (count || saved.size) {
+        results.push({ key, status: "filled", ...(cautions.length ? { caution: cautions.join(" ") } : {}) });
+        state.completed = true;
+        return "break";
+      }
+    }
+    state.lastReason = "Repeated section requires a profile row.";
+    state.lastStatus = "skipped";
+    return "continue";
+  }
+}
+
+// Part of interpretConfig, one choice of a rule: the element found, and the profile value written into it.
+// "break" or "continue" for the choices loop, or nothing to go on.
+async function applyChoice(
+  state: ChoiceState,
+  { config, configuredPaths, context, element, forbidden, globals, key, options, results, root, selector, used, values }: {
+  config: SiteConfig;
+  configuredPaths: string[];
+  context: Element | Document;
+  // Found: a choice with no element went on before this.
+  element: Element;
+  forbidden: Set<Element>;
+  globals: GlobalConfig;
+  key: string;
+  options: InterpreterOptions;
+  results: FillStatus[];
+  root: Document;
+  selector: SelectorConfig;
+  used: Set<Element>;
+  values: string[];
+  },
+): Promise<"break" | "continue" | undefined> {
+  try {
+    if (options.signal?.aborted)
+      throw new DOMException("Aborted", "AbortError");
+    let accepted = true;
+    let unpicked = false;
+    // A pick that is the closest the site lists, not the profile's own.
+    let approximate: string | undefined;
+    // Values searched one by one that the site's list did not take.
+    const notPicked: string[] = [];
+    // The site's own list, where the rule names it: the wordings it holds
+    // are tried first, in its spelling, and from a whole list, only those.
+    const site = selector.optionsSource && values.length
+      ? await options.listOptions?.(selector.optionsSource, values).catch(() => undefined)
+      : undefined;
+    const onList = site ? listedNames(values, site) : [];
+    if (onList.length) values = site!.complete ? onList : [...new Set([...onList, ...values])];
+    // A whole list with none of them: searching each wording finds nothing.
+    const unlisted = Boolean(site?.complete) && !onList.length;
+    options.onField?.(element, key);
+    // A list already showing one of its answers (a second fill of the
+    // step) is not opened again: Workday's Degree was left open over the
+    // form. Checked before any way
+    // of opening it: the search-dropdown handling pressed Workday's Degree
+    // button showing "Masters".
+    const showing = !isTag(element, "input") && !isTag(element, "textarea") ? normalize(textValue(element) || "") : "";
+    if (!selector.everyValue && showing && selector.actions?.some((action) => action.path) && values.some((value) => normalize(value) === showing)) {
+      options.onConfirmed?.(element);
+      results.push({ key, status: "filled" });
+      state.completed = true;
+      return "break";
+    }
+    const searched = /^(school|major|degree|name|discipline|country|state|education)$/.test(key) || selector.valueKey === "street_listing"
+      ? await viaSearchDropdown(element, values, globals, options)
+      : "unsupported";
+    if (searched === "selected") {
+      results.push({ key, status: "filled" });
+      state.completed = true;
+      return "break";
+    }
+    if (searched === "no-match")
+      throw new Error("No list option matches the confirmed answer.");
+    const outcome = await viaReactSelect(element, values, globals, options);
+    if (outcome === "skipped") {
+      state.lastReason = "Field already has a value.";
+      state.lastStatus = "skipped";
+      return "continue";
+    }
+    if (outcome === "no-match")
+      throw new Error("No dropdown option matches the confirmed answer.");
+    if (outcome === "selected") {
+      // Handled through the component; configured clicks are not replayed.
+    } else if (selector.actions?.length) {
+      // A search box that was typed into, whose pick from the site's list
+      // then found nothing to press: the text is on the page, but the site
+      // holds no answer (Lever keeps the chosen location in a hidden
+      // field). Not a failure, and not silent either. Only for a pick the
+      // rule marks pickRequired: elsewhere typed text can be the answer.
+      const typing = /^(default|defaultWithoutBlur|jQuery|react|keyType|trustedType|trustedSearch|trustedChoose|setValue)$/;
+      const picks = (action: FillAction) =>
+        Boolean(action.pickRequired && action.path) && (["click", "reactClick"].includes(action.method || "") || /^(mousedown|click)$/.test(action.event || ""));
+      // browse: the list opened with nothing typed, the pick made from
+      // the whole of it, its options already loaded.
+      const runActions = async (actionValues: string[], browse = false) => {
+        let typed = false;
+        unpicked = false;
+        for (const configured of selector.actions!) {
+          if (browse && !configured.path && (configured.event || typing.test(configured.method || config.defaultMethod))) continue;
+          const action = browse && configured.path && configured.time ? { ...configured, time: Math.min(configured.time, 2_500) } : configured;
+          const missed = () => {
+            if (typed && picks(action)) unpicked = true;
+          };
+          try {
+            const actionAccepted = await runAction(
+              action,
+              element,
+              configuredPaths[0] || paths(selector.path)[0] || ".",
+              actionValues,
+              root,
+              context,
+              forbidden,
+              globals,
+              options,
+            );
+            if (!actionAccepted && !action.allowFailure)
+              throw new Error("Configured action was not accepted.");
+            if (!actionAccepted) missed();
+            else if (!action.path && !action.event && typing.test(action.method || config.defaultMethod)) typed = true;
+            else if (picks(action)) unpicked = false;
+          } catch (error) {
+            if (isAbortError(error)) throw error;
+            if (!action.allowFailure) throw error;
+            missed();
+          }
+        }
+      };
+      // A search typed from the first value can find nothing ("United
+      // States of America" where the site lists "United States"); the
+      // next few values are typed in turn until one is found and picked.
+      const typesThenPicks =
+        !selector.everyValue &&
+        values.length > 0 &&
+        selector.actions.some((action) =>
+          /^(default|defaultWithoutBlur|keyType|trustedType|trustedSearch|trustedChoose)$/.test(action.method || ""),
+        ) &&
+        selector.actions.some((action) =>
+          action.rankedPick || paths(action.path).some((path) => /%(LOWER|UPPER)?VALUE%/.test(path)),
+        );
+      if (typesThenPicks) {
+        // Search confirmed names before short codes. A missing named
+        // field of study never falls back to Other: in a Workday list it
+        // takes the closest related field, with a caution (below).
+        const extends_ = (value: string) =>
+          values.some((other) => other !== value && normalize(other).startsWith(`${normalize(value)} `));
+        const rank = (value: string) => (extends_(value) ? 0 : value.trim().length <= 3 ? 2 : 1);
+        const attempts = [...values.slice(0, 4)].sort((a, b) => rank(a) - rank(b));
+        // Already holding one of them (an earlier pass picked it): typing
+        // again would only reopen the list over a finished answer.
+        const current = normalize(textValue(element) || "");
+        if (current && attempts.some((attempt) => normalize(attempt) === current)) {
+          results.push({ key, status: "filled" });
+          state.completed = true;
+          return "break";
+        }
+        let failure: unknown;
+        let picked = false;
+        // A field of study in a list of picks (Workday's): typing finds
+        // nothing to pick when the site lists none of its wordings, and
+        // the typed text is dropped when the box loses focus. Each try is
+        // judged by the pick it left, and with none, the closest standard
+        // field the list holds is tried (relatedFieldsOfStudy).
+        const pickBox = element.closest('[data-automation-id="multiSelectContainer"]');
+        const studyField = Boolean(pickBox) && /^(major|field_of_study|discipline)(_[234])?$/.test(selector.valueKey || key);
+        const holdsPick = (wanted: string[]) =>
+          [...(pickBox?.querySelectorAll('[data-automation-id="selectedItem"]') || [])].some((item) => {
+            const shown = normalize(item.getAttribute("title") || item.textContent || "");
+            return Boolean(shown) && wanted.some((value) => normalize(value) === shown);
+          });
+        const clearSearch = () =>
+          (options.execute || defaultExecute)({ element, globals, method: "clearValue", signal: options.signal, values: [] }).catch(() => false);
+        // Workday searches for the text anywhere in a name: a longer
+        // wording holding one that found nothing cannot find more, and
+        // each empty search costs about 20 s of the pass.
+        const foundNothing: string[] = [];
+        let browsed = false;
+        if (studyField && unlisted) failure = new Error(`The site's list has no "${values[0]}".`);
+        for (const first of attempts) {
+          if (studyField && unlisted) break;
+          if (studyField && foundNothing.some((term) => normalize(first).includes(normalize(term)))) continue;
+          try {
+            await runActions([first, ...values.filter((value) => value !== first)]);
+            // Workday adds the pick a moment after its option is clicked;
+            // judged at once, one employer's "Data Science" read as not found and
+            // its search was cleared.
+            for (let waited = 0; studyField && !holdsPick(values) && waited < 1_500; waited += 100)
+              await sleep(100, options.signal);
+            if (studyField && !holdsPick(values)) {
+              foundNothing.push(first);
+              throw new Error(`The site's list has no "${first}".`);
+            }
+            picked = true;
+            break;
+          } catch (error) {
+            if (isAbortError(error)) throw error;
+            // A pick made by the search itself (its Enter chose the one
+            // match) is a pick: the next wording's first step cleared it,
+            // and one employer's "Data Science" became "Computer Science".
+            if (pickBox && holdsPick(values)) {
+              picked = true;
+              break;
+            }
+            failure = error;
+            // The site's search found nothing for a name its list holds
+            // (SuccessFactors finds no "Telangana" among India's states,
+            // which list it): the answer is picked from the whole list
+            // before other spellings are searched the same way.
+            const nothing = !studyField && !browsed && listFoundNothing(element);
+            // A list left open answers the next field's search.
+            dismissPopup(element);
+            if (studyField) await clearSearch();
+            if (nothing) {
+              browsed = true;
+              await clearSearch();
+              try {
+                await runActions(values, true);
+                picked = true;
+                break;
+              } catch (browseError) {
+                if (isAbortError(browseError)) throw browseError;
+                dismissPopup(element);
+              }
+            }
+          }
+        }
+        // From the site's whole list, only the related fields it holds.
+        const closest = relatedFieldsOfStudy(values[0] || "");
+        if (!picked && studyField)
+          for (const related of site?.complete ? listedNames(closest, site) : closest) {
+            try {
+              await runActions([related]);
+              if (!holdsPick([related])) throw new Error(`The site's list has no "${related}".`);
+              picked = true;
+              approximate = related;
+              break;
+            } catch (error) {
+              if (isAbortError(error)) throw error;
+              dismissPopup(element);
+              await clearSearch();
+            }
+          }
+        // A pick made, focus leaves the search box: the next look at the
+        // page takes a focused field for one the applicant is in, and
+        // reported this one unfilled (OpenAI's location on Ashby too).
+        if (picked && studyField && element.ownerDocument.activeElement === element) (element as HTMLElement).blur();
+        if (!picked) {
+          // Never leave typed search text behind as if it were an answer.
+          await (options.execute || defaultExecute)({
+            element,
+            globals,
+            method: "clearValue",
+            signal: options.signal,
+            values: [],
+          }).catch(() => false);
+          dismissPopup(element);
+          // Nor the focus the search took: the page's own selection of
+          // this field refuses one it finds focused by something else.
+          if (element.ownerDocument.activeElement === element) (element as HTMLElement).blur();
+          throw failure;
+        }
+      } else {
+        // A list already showing one of its answers (a second fill of the
+        // step) is not opened again: Workday's Degree was left open over
+        // the form.
+        // A read-only box its picker already set (Tesla's start date) is done: opening its calendar again
+        // and clicking the chosen day cleared it.
+        if (!selector.everyValue && isTag(element, "input") && (element as HTMLInputElement).readOnly && (textValue(element) || "").trim() && selector.actions.some((action) => action.path)) {
+          results.push({ key, status: "filled" });
+          state.completed = true;
+          return "break";
+        }
+        const showing = !isTag(element, "input") && !isTag(element, "textarea") ? normalize(textValue(element) || "") : "";
+        if (!selector.everyValue && showing && selector.actions.some((action) => action.path) && values.some((value) => normalize(value) === showing)) {
+          results.push({ key, status: "filled" });
+          state.completed = true;
+          return "break";
+        }
+        // Each value searched in turn (Workday's skills, one search each):
+        // a limit keeps a long profile list from taking minutes.
+        // A skill is searched by its own name and picked under the
+        // library's (skill-names.ts): "C#" as "C Sharp (Programming
+        // Language)".
+        const skillList = selector.everyValue && /^skills?$/.test(selector.valueKey || key);
+        if (skillList) for (const action of selector.actions) siteOrdered.add(action);
+        const valueBatches = selector.everyValue
+          ? values.slice(0, selector.limit ?? values.length).map((value) => [value, ...(skillList ? skillNames(value) : [])])
+          : [values];
+        // In a list of picks, one it already holds is not searched again
+        // (a second fill pressed nothing for each and waited 3 s), and one
+        // searched that left no pick is named for the applicant: the site
+        // listed 16 of a profile's first 25 skills, and the other nine went
+        // unmentioned. Its own wording may add a kind:
+        // "Python (Programming Language)".
+        const pickBox = selector.everyValue ? element.closest('[data-automation-id="multiSelectContainer"]') : null;
+        const held = (value: string) =>
+          [...(pickBox?.querySelectorAll('[data-automation-id="selectedItem"]') || [])].some((item) => {
+            const shown = (item.getAttribute("title") || item.textContent || "").trim().toLowerCase();
+            return [value, ...(skillList ? skillNames(value) : [])].some((name) => {
+              const wanted = name.trim().toLowerCase();
+              return shown === wanted || shown.startsWith(`${wanted} (`) || shown.endsWith(` (${wanted})`);
+            });
+          });
+        try {
+          for (const actionValues of valueBatches) {
+            if (pickBox && held(actionValues[0])) continue;
+            await runActions(actionValues);
+            if (pickBox && !held(actionValues[0])) notPicked.push(actionValues[0]);
+          }
+        } catch (error) {
+          if (!isAbortError(error)) await closeOpenedList(element, options);
+          // A pass that ends mid-search (its time is up, or a pause)
+          // skips the steps that empty the box: the typed skill stayed,
+          // the site committed it when focus moved on, and that change
+          // read as the applicant's edit and paused the fill.
+          else if (pickBox) clearSearchBox(element);
+          throw error;
+        }
+      }
+    } else {
+      const method = selector.method || config.defaultMethod;
+      if (
+        ["click", "reactClick"].includes(method) &&
+        isForbiddenClick(element, forbidden, true, options.context)
+      )
+        throw new Error(forbiddenReason(element));
+      if (
+        !nonMutatingMethods.has(method) &&
+        !["click", "reactClick", "event"].includes(method) &&
+        textValue(element) &&
+        !options.isReplaceable?.(element)
+      ) {
+        state.lastReason = "Field already has a value.";
+        state.lastStatus = "skipped";
+        return "continue";
+      }
+      accepted = await (options.execute || defaultExecute)({
+        element,
+        globals,
+        method,
+        signal: options.signal,
+        values: [...values],
+      });
+    }
+    if (!accepted)
+      throw new Error("Site did not accept the configured value.");
+    // A search whose optional pick found nothing ("No results") leaves
+    // its list open, and an open list hides the rest of the form from
+    // the next look at it (Ashby, Talos's Location; eval).
+    const opened = element.matches('[aria-expanded="true"]')
+      ? element
+      : element.querySelector('[role="combobox"][aria-expanded="true"]');
+    if (opened) dismissPopup(opened);
+    // The question's own heading where the site marks one (Lever wraps
+    // the whole widget, list included, in the label).
+    const heading = element.closest("label, fieldset")?.querySelector('legend, [class*="label" i]')?.textContent;
+    const asked = (heading || questionText(element)).replace(/[*✱]/g, "").replace(/\s+/g, " ").trim().slice(0, 80) || key;
+    results.push({
+      key,
+      status: "filled",
+      ...(approximate
+        ? { caution: `${asked}: the site lists no "${values[0]}", so the closest field it lists, "${approximate}", was picked. Change it if another fits better.` }
+        : unpicked ? { caution: `${asked}: typed, but nothing was picked from the site's own list. Choose it there yourself.` }
+        : notPicked.length ? { caution: `${asked}: the site's list has no ${notPicked.map((value) => `"${value}"`).join(", ")}. Add any that fit under another name there.` } : {}),
+    });
+    state.completed = true;
+    return "break";
+  } catch (error) {
+    if (isAbortError(error)) throw error;
+    state.lastReason = (error as Error).message || "Configured action failed.";
+    dismissPopup(element);
+    // A failed attempt must not keep the control reserved: the accessible
+    // fallback (or another selector) should still get a chance at it.
+    if (!selector.allowReuse) used.delete(element);
+  }
 }
 
 export function valuesForRepeatedSection(

@@ -4,13 +4,13 @@ import { type Application, type Profile, type GenerationJob, type Observation, t
 import { genericTitle, singlePostingUrl } from "../../shared/titles";
 import { canonicalURL, postingGuess, proposals, historyRowMap } from "../../shared/matching";
 import { configEngineEnabled } from "../../engine/mode";
-import { documentKind } from "../semantics";
+import { documentKind, type DocumentKind } from "../semantics";
 import { pickTranscript } from "../../shared/transcripts";
 import { storeBuild } from "../../shared/store-build";
 import { trustedTypingAvailable, releaseTrustedInput } from "../trusted-input";
 import { rowHolds } from "../row-holds";
 import { clearFit, fillable, forApplication, operationKey, resume, schedule, touch } from "./queue";
-import { alive, answerRequests, api, applyFrame, configUploads, dirty, emptyFields, fieldFallbackRequests, frameCall, frameDeadline, loadingSince, pageTimers, persist, reinspectNavigation, reviewInterruptedWrite, signingPolicies } from "./core";
+import { type Frame, alive, answerRequests, api, applyFrame, configUploads, dirty, emptyFields, fieldFallbackRequests, frameCall, frameDeadline, loadingSince, pageTimers, persist, reinspectNavigation, reviewInterruptedWrite, signingPolicies } from "./core";
 import { guessedAgain, inspectTab, leadingPage, namedByPage, observations, postingFromOwnTab, useApply, wordCount } from "./tabs";
 import { interactedNote } from "./submissions";
 import { assist, leftAsLegal, modelFills, noteAiFilled, readListOptions } from "./field-fallback";
@@ -764,244 +764,13 @@ export async function run(app: Application, operation: number) {
     // parses the upload in place can empty them (Microsoft's careers form
     // blanked the typed address and zip 1.5 s after its resume_upload
     // returned). Those are answered again below.
-    let filledBeforeResume: Map<string, string> | undefined;
+    const resume: { filledBeforeResume?: Map<string, string> } = {};
     const heldBySite = (f: Field) => fileKind(f) === "resume" && Boolean(f.value) && !f.attachmentId &&
       !app.uploadedDocuments?.resume && !app.siteFillTried && !app.siteFillPending &&
       (f.siteValue || (Boolean(app.replaceDocuments) && f.protectedReason === "existing value"));
-    for (const field of frame.observation.fields.filter(
-      (f) =>
-        f.kind === "file" &&
-        (!f.value || f.attachmentId || heldBySite(f)) &&
-        (!f.protected || heldBySite(f)) &&
-        (!resumeFirst || f.replacesForm),
-    )) {
-      if (!alive(app, operation)) return;
-      const kind = fileKind(field);
-      const held = heldBySite(field);
-      if (!kind) {
-        issues.push(`Choose a file manually: ${field.label}`);
-        continue;
-      }
-      const accepts = (artifact: Artifact) =>
-        !field.accept ||
-        field.accept
-          .split(",")
-          .some((a) =>
-            [
-              `.${artifact.format}`,
-              artifact.mime,
-              "*/*",
-              "application/*",
-            ].includes(a.trim().toLowerCase()),
-          );
-      // A transcript is one degree's: a field naming a level gets that
-      // level's or none (see shared/transcripts.ts).
-      const picked = kind === "transcript" ? pickTranscript(field.label, job.artifacts.filter(accepts), profile) : undefined;
-      if (picked?.missing) {
-        issues.push(`Upload your ${picked.missing} transcript yourself for "${field.label}", or attach it to its school under Education in the dashboard. Another degree's was not used.`.slice(0, 350));
-        continue;
-      }
-      const artifact = picked ? picked.artifact : job.artifacts.find((a) => a.kind === kind && accepts(a));
-      if (!artifact && kind === "transcript" && !job.artifacts.some((a) => a.kind === "transcript")) {
-        issues.push(`No transcript to upload for ${field.label}: add yours under Settings, in the dashboard.`);
-        continue;
-      }
-      if (!artifact) {
-        issues.push(`No supported document format: ${field.label}`);
-        continue;
-      }
-      if (field.attachmentId === artifact.id) continue;
-      const bytes = await api(`/v1/artifacts/${artifact.id}`);
-      if (!alive(app, operation)) return;
-      // A continuation reuses the document under a fresh operation's ID.
-      // An upload already confirmed by this extension, still retained under
-      // the exact filename and containing identical bytes, is not sent again.
-      const fingerprint = await digest(bytes.data);
-      const memo = artifact.education !== undefined ? `${kind}:${artifact.education}` : kind;
-      if ((field.attachmentId || held) && field.value === artifact.name &&
-        app.uploadedDocuments?.[memo] === fingerprint) continue;
-      // Workday empties its file input once the upload is done and lists the
-      // file beside it: the same document already shown there is not sent
-      // again on a second fill.
-      if (app.uploadedDocuments?.[memo] === fingerprint &&
-        (await frameCall(app, frame.frameId, { type: "ATTACHED", name: artifact.name }).catch(() => undefined))?.attached) continue;
-      if (!alive(app, operation)) return;
-      // The site rewrites the form from this upload, often reloading before
-      // the upload can be confirmed; what it parses may be replaced later.
-      if (resumeFirst && field.replacesForm) {
-        app.siteFillPending = true;
-        app.continueAfterSiteFill = true;
-        app.siteFillTried = true;
-        await persist();
-      }
-      // The field as the page now reads, not as the step began: an upload
-      // before it redraws its group (Workday's shared uploader, where the
-      // resume goes first), and the cover letter sent with the revision read
-      // before that was refused as stale and never uploaded.
-      const now = frame.observation.fields.find((f) => f.id === field.id) ||
-        frame.observation.fields.find((f) => f.kind === "file" && fileKind(f) === kind && f.label === field.label);
-      if (!now) {
-        issues.push(`Verify upload: ${field.label}`);
-        continue;
-      }
-      if (kind === "resume" && !filledBeforeResume)
-        filledBeforeResume = new Map(frame.observation.fields.filter((f) => f.kind !== "file" && f.value).map((f) => [f.id, f.value]));
-      try {
-        const result = await frameCall(app, frame.frameId, {
-          type: "ATTACH",
-          documentId: frame.observation.documentId,
-          fieldId: now.id,
-          expectedValue: now.value,
-          revision: now.revision,
-          artifact: bytes,
-          profile,
-          replaceExisting: held,
-        });
-        if (!alive(app, operation)) return;
-        frame.observation = result.observation;
-        // Workday empties the input once the upload is done and lists the
-        // file elsewhere on the page: the name shown there confirms it.
-        const shown = !result.siteError && !result.attached &&
-          (await frameCall(app, frame.frameId, { type: "ATTACHED", name: artifact.name }).catch(() => undefined))?.attached;
-        if (!alive(app, operation)) return;
-        if (result.siteError)
-          issues.push(
-            `${field.label} upload failed on the site: "${result.siteError}". Reload the page, then choose Fill this step.`,
-          );
-        else if (!result.attached && !shown) issues.push(`Verify upload: ${field.label}`);
-        else {
-          app.uploadedDocuments = { ...app.uploadedDocuments, [memo]: fingerprint };
-          if (held) {
-            const note = `Replaced the ${field.label} the site already had with this application's tailored one.`;
-            if (!app.configNotes?.includes(note)) app.configNotes = [...(app.configNotes || []), note];
-          }
-          await persist();
-        }
-      } catch (error) {
-        if (!alive(app, operation)) return;
-        issues.push((error as Error).message);
-      }
-    }
+    if ((await fillByProfile(resume, { app, fileKind, frame, heldBySite, issues, job, operation, profile, resumeFirst })) === "stop") return;
     if (!alive(app, operation)) return;
-    // Sites that upload through a dialog (SuccessFactors' "Upload a Resume")
-    // show no file field until it opens. A document with no file field of its
-    // kind on the page goes through the site config's upload steps instead.
-    // Not in an embedded frame with nothing in it: Microsoft's near-empty
-    // profile export frame, gone by then, turned the rule's uploads into a
-    // résumé and cover letter reported as failed while the résumé was in.
-    if (configEngineEnabled && (!resumeFirst || frame.observation.resumeSlotOpen) && (frame.frameId === 0 || frame.observation.fields.length)) {
-      for (const field of frame.observation.fields.filter((f) => f.kind === "file")) fieldKinds.add(fileKind(field));
-      // One document at a time: SuccessFactors saves an upload and then
-      // reloads the whole form from its server (recording),
-      // dropping whatever was filled and not yet saved, and an upload still
-      // under way when that happens is lost.
-      let uploaded = false;
-      // Whatever the site writes from here is its parse, for the next pass
-      // to correct; and that pass does not upload first again.
-      if (resumeFirst) {
-        app.siteFillPending = true;
-        app.siteFillTried = true;
-        await persist();
-      }
-      // The resume alone when the site fills the form from it.
-      for (const kind of resumeFirst ? (["resume"] as const) : (["resume", "cover"] as const)) {
-        const artifact =
-          job.artifacts.find((a) => a.kind === kind && a.format === "pdf") ||
-          job.artifacts.find((a) => a.kind === kind);
-        const key = `${frame.observation.documentId}|${kind}`;
-        if (!artifact || fieldKinds.has(kind) || configUploads.has(key)) continue;
-        const bytes = await api(`/v1/artifacts/${artifact.id}`);
-        if (!alive(app, operation)) return;
-        // Already attached by this application: its config steps would
-        // remove it to upload it again. A file of the same name is not
-        // enough (an earlier application's "Alex_Rivera_Cover_Letter.pdf"),
-        // so it must be the very document this application uploaded.
-        const fingerprint = await digest(bytes.data);
-        const attached = await frameCall(app, frame.frameId, { type: "ATTACHED", name: artifact.name }).catch(() => undefined);
-        if (attached?.attached && app.uploadedDocuments?.[kind] === fingerprint) continue;
-        const before = frame.observation.fields.length;
-        const result = await frameCall(app, frame.frameId, {
-          type: "CONFIG_FILL",
-          documentId: frame.observation.documentId,
-          documentURL: frame.observation.url,
-          profile,
-          onlyKeys: [kind === "cover" ? "coverLetter" : "resume"],
-          uploads: { [kind]: bytes },
-        }).catch((error: Error) => ({ statuses: [{ key: kind, status: "failed", reason: error.message }] }));
-        if (!alive(app, operation)) return;
-        const statuses = (result.statuses || []) as { key: string; status: string; reason?: string }[];
-        app.configNotes = [
-          ...(app.configNotes || []),
-          ...statuses
-            .filter((status) => status.status !== "filled")
-            .map((status) => `upload ${status.key}: ${status.reason || status.status}`.slice(0, 200)),
-        ].slice(0, 80);
-        if (statuses.some((status) => status.status === "filled")) {
-          configUploads.add(key);
-          app.uploadedDocuments = { ...app.uploadedDocuments, [kind]: fingerprint };
-          await persist();
-          uploaded = true;
-          // Uploaded first: until the slot shows the file and the site's
-          // parse has stopped changing the form (the same values on two
-          // reads a second apart, from the fourth second), or 30 seconds.
-          // The fill that follows then writes the profile's values last.
-          if (resumeFirst) {
-            let previous = "";
-            let steady = 0;
-            for (let waited = 0; waited < 30 && steady < 2; waited++) {
-              await new Promise((resolve) => setTimeout(resolve, 1000));
-              if (!alive(app, operation)) return;
-              const now: Observation | undefined = await frameCall(app, frame.frameId, { type: "INSPECT", documentId: frame.observation.documentId }).catch(() => undefined);
-              const form = now && !now.resumeSlotOpen ? JSON.stringify(now.fields.map((field) => [field.id, field.value])) : "";
-              steady = form && form === previous && waited >= 3 ? steady + 1 : 0;
-              previous = form;
-            }
-            continue;
-          }
-          // Until the site has reloaded the form (it loses fields), or for
-          // ten seconds when it does not.
-          for (let waited = 0; waited < 10; waited++) {
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            if (!alive(app, operation)) return;
-            const now: Observation | undefined = await frameCall(app, frame.frameId, { type: "INSPECT", documentId: frame.observation.documentId }).catch(() => undefined);
-            if (now && now.fields.length < before) {
-              await new Promise((resolve) => setTimeout(resolve, 2000));
-              break;
-            }
-          }
-        } else
-          for (const status of statuses)
-            // A page with no upload of this kind is not a failed upload.
-            if (status.status === "failed" && !/No configured selector matched/i.test(status.reason || ""))
-              issues.push(
-                `${kind === "cover" ? "Cover letter" : "Resume"} upload did not finish${status.reason ? ` (${status.reason})` : ""}. Upload it yourself.`.slice(0, 350),
-              );
-      }
-      if (!alive(app, operation)) return;
-      // The form may have been reset by the uploads: fill it again from the
-      // start. The documents are not uploaded twice. A resume sent first is
-      // followed by the fill whether or not it went up; that pass reports a
-      // failed upload as any other.
-      if (uploaded || configResumeFirst) {
-        // A new generation request follows (its answers are for the form as
-        // it now is); the backend hands back this application's finished
-        // documents instead of tailoring them again.
-        app.operation++;
-        app.jobId = undefined;
-        app.artifacts = [];
-        app.narrative = undefined;
-        app.generationKey = undefined;
-        touch(
-          app,
-          "queued",
-          configResumeFirst
-            ? "Resume uploaded first; the site filled the form from it. Filling the form…"
-            : "Documents uploaded; the site reloaded the form. Filling it again…",
-        );
-        await persist();
-        return;
-      }
-    }
+    if ((await fillByConfig({ app, configResumeFirst, fieldKinds, fileKind, frame, issues, job, operation, profile, resumeFirst })) === "stop") return;
     // The site is now parsing the resume and may reload; nothing else here
     // is worth reading until it settles.
     if (resumeFirst) continue;
@@ -1057,8 +826,8 @@ export async function run(app: Application, operation: number) {
     // Answers the site emptied after the resume went up: watched until the
     // form has held still for two reads a second apart (or 15 seconds),
     // then answered again once. A site that reloaded is handled above.
-    if (filledBeforeResume?.size && !resetAfterUpload && frame.observation.documentId === beforeUploadInspection) {
-      const emptied = (fields: Field[]) => fields.filter((f) => f.kind !== "file" && !f.value && filledBeforeResume!.has(f.id) && !f.protected);
+    if (resume.filledBeforeResume?.size && !resetAfterUpload && frame.observation.documentId === beforeUploadInspection) {
+      const emptied = (fields: Field[]) => fields.filter((f) => f.kind !== "file" && !f.value && resume.filledBeforeResume!.has(f.id) && !f.protected);
       let previous = "";
       let steady = 0;
       for (let waited = 0; waited < 15 && steady < 2; waited++) {
@@ -1258,6 +1027,276 @@ export async function run(app: Application, operation: number) {
       await persist();
       await resume(app, { operation: request, tabId }).catch(() => {});
     })();
+  }
+}
+
+
+// Part of run(), for one frame: each field the profile answers, filled by the extension's own rules.
+// "stop" when the run is over (the application moved on or was stopped).
+async function fillByProfile(
+  resume: { filledBeforeResume?: Map<string, string> },
+  { app, fileKind, frame, heldBySite, issues, job, operation, profile, resumeFirst }: {
+  app: Application;
+  fileKind: (f: Field) => DocumentKind | undefined;
+  frame: Frame;
+  heldBySite: (f: Field) => boolean;
+  issues: string[];
+  job: GenerationJob;
+  operation: number;
+  profile: Profile;
+  resumeFirst: boolean;
+  },
+): Promise<"stop" | undefined> {
+  for (const field of frame.observation.fields.filter(
+    (f) =>
+      f.kind === "file" &&
+      (!f.value || f.attachmentId || heldBySite(f)) &&
+      (!f.protected || heldBySite(f)) &&
+      (!resumeFirst || f.replacesForm),
+  )) {
+    if (!alive(app, operation)) return "stop";
+    const kind = fileKind(field);
+    const held = heldBySite(field);
+    if (!kind) {
+      issues.push(`Choose a file manually: ${field.label}`);
+      continue;
+    }
+    const accepts = (artifact: Artifact) =>
+      !field.accept ||
+      field.accept
+        .split(",")
+        .some((a) =>
+          [
+            `.${artifact.format}`,
+            artifact.mime,
+            "*/*",
+            "application/*",
+          ].includes(a.trim().toLowerCase()),
+        );
+    // A transcript is one degree's: a field naming a level gets that
+    // level's or none (see shared/transcripts.ts).
+    const picked = kind === "transcript" ? pickTranscript(field.label, job.artifacts.filter(accepts), profile) : undefined;
+    if (picked?.missing) {
+      issues.push(`Upload your ${picked.missing} transcript yourself for "${field.label}", or attach it to its school under Education in the dashboard. Another degree's was not used.`.slice(0, 350));
+      continue;
+    }
+    const artifact = picked ? picked.artifact : job.artifacts.find((a) => a.kind === kind && accepts(a));
+    if (!artifact && kind === "transcript" && !job.artifacts.some((a) => a.kind === "transcript")) {
+      issues.push(`No transcript to upload for ${field.label}: add yours under Settings, in the dashboard.`);
+      continue;
+    }
+    if (!artifact) {
+      issues.push(`No supported document format: ${field.label}`);
+      continue;
+    }
+    if (field.attachmentId === artifact.id) continue;
+    const bytes = await api(`/v1/artifacts/${artifact.id}`);
+    if (!alive(app, operation)) return "stop";
+    // A continuation reuses the document under a fresh operation's ID.
+    // An upload already confirmed by this extension, still retained under
+    // the exact filename and containing identical bytes, is not sent again.
+    const fingerprint = await digest(bytes.data);
+    const memo = artifact.education !== undefined ? `${kind}:${artifact.education}` : kind;
+    if ((field.attachmentId || held) && field.value === artifact.name &&
+      app.uploadedDocuments?.[memo] === fingerprint) continue;
+    // Workday empties its file input once the upload is done and lists the
+    // file beside it: the same document already shown there is not sent
+    // again on a second fill.
+    if (app.uploadedDocuments?.[memo] === fingerprint &&
+      (await frameCall(app, frame.frameId, { type: "ATTACHED", name: artifact.name }).catch(() => undefined))?.attached) continue;
+    if (!alive(app, operation)) return "stop";
+    // The site rewrites the form from this upload, often reloading before
+    // the upload can be confirmed; what it parses may be replaced later.
+    if (resumeFirst && field.replacesForm) {
+      app.siteFillPending = true;
+      app.continueAfterSiteFill = true;
+      app.siteFillTried = true;
+      await persist();
+    }
+    // The field as the page now reads, not as the step began: an upload
+    // before it redraws its group (Workday's shared uploader, where the
+    // resume goes first), and the cover letter sent with the revision read
+    // before that was refused as stale and never uploaded.
+    const now = frame.observation.fields.find((f) => f.id === field.id) ||
+      frame.observation.fields.find((f) => f.kind === "file" && fileKind(f) === kind && f.label === field.label);
+    if (!now) {
+      issues.push(`Verify upload: ${field.label}`);
+      continue;
+    }
+    if (kind === "resume" && !resume.filledBeforeResume)
+      resume.filledBeforeResume = new Map(frame.observation.fields.filter((f) => f.kind !== "file" && f.value).map((f) => [f.id, f.value]));
+    try {
+      const result = await frameCall(app, frame.frameId, {
+        type: "ATTACH",
+        documentId: frame.observation.documentId,
+        fieldId: now.id,
+        expectedValue: now.value,
+        revision: now.revision,
+        artifact: bytes,
+        profile,
+        replaceExisting: held,
+      });
+      if (!alive(app, operation)) return "stop";
+      frame.observation = result.observation;
+      // Workday empties the input once the upload is done and lists the
+      // file elsewhere on the page: the name shown there confirms it.
+      const shown = !result.siteError && !result.attached &&
+        (await frameCall(app, frame.frameId, { type: "ATTACHED", name: artifact.name }).catch(() => undefined))?.attached;
+      if (!alive(app, operation)) return "stop";
+      if (result.siteError)
+        issues.push(
+          `${field.label} upload failed on the site: "${result.siteError}". Reload the page, then choose Fill this step.`,
+        );
+      else if (!result.attached && !shown) issues.push(`Verify upload: ${field.label}`);
+      else {
+        app.uploadedDocuments = { ...app.uploadedDocuments, [memo]: fingerprint };
+        if (held) {
+          const note = `Replaced the ${field.label} the site already had with this application's tailored one.`;
+          if (!app.configNotes?.includes(note)) app.configNotes = [...(app.configNotes || []), note];
+        }
+        await persist();
+      }
+    } catch (error) {
+      if (!alive(app, operation)) return "stop";
+      issues.push((error as Error).message);
+    }
+  }
+}
+
+// Part of run(), for one frame: the site rules (the config engine) run in the frame.
+// Sites that upload through a dialog (SuccessFactors' "Upload a Resume")
+// show no file field until it opens. A document with no file field of its
+// kind on the page goes through the site config's upload steps instead.
+// Not in an embedded frame with nothing in it: Microsoft's near-empty
+// profile export frame, gone by then, turned the rule's uploads into a
+// résumé and cover letter reported as failed while the résumé was in.
+// "stop" when the run is over (the application moved on or was stopped).
+async function fillByConfig(
+  { app, configResumeFirst, fieldKinds, fileKind, frame, issues, job, operation, profile, resumeFirst }: {
+  app: Application;
+  configResumeFirst: boolean;
+  fieldKinds: Set<DocumentKind | undefined>;
+  fileKind: (f: Field) => DocumentKind | undefined;
+  frame: Frame;
+  issues: string[];
+  job: GenerationJob;
+  operation: number;
+  profile: Profile;
+  resumeFirst: boolean;
+  },
+): Promise<"stop" | undefined> {
+  if (configEngineEnabled && (!resumeFirst || frame.observation.resumeSlotOpen) && (frame.frameId === 0 || frame.observation.fields.length)) {
+    for (const field of frame.observation.fields.filter((f) => f.kind === "file")) fieldKinds.add(fileKind(field));
+    // One document at a time: SuccessFactors saves an upload and then
+    // reloads the whole form from its server (recording),
+    // dropping whatever was filled and not yet saved, and an upload still
+    // under way when that happens is lost.
+    let uploaded = false;
+    // Whatever the site writes from here is its parse, for the next pass
+    // to correct; and that pass does not upload first again.
+    if (resumeFirst) {
+      app.siteFillPending = true;
+      app.siteFillTried = true;
+      await persist();
+    }
+    // The resume alone when the site fills the form from it.
+    for (const kind of resumeFirst ? (["resume"] as const) : (["resume", "cover"] as const)) {
+      const artifact =
+        job.artifacts.find((a) => a.kind === kind && a.format === "pdf") ||
+        job.artifacts.find((a) => a.kind === kind);
+      const key = `${frame.observation.documentId}|${kind}`;
+      if (!artifact || fieldKinds.has(kind) || configUploads.has(key)) continue;
+      const bytes = await api(`/v1/artifacts/${artifact.id}`);
+      if (!alive(app, operation)) return "stop";
+      // Already attached by this application: its config steps would
+      // remove it to upload it again. A file of the same name is not
+      // enough (an earlier application's "Alex_Rivera_Cover_Letter.pdf"),
+      // so it must be the very document this application uploaded.
+      const fingerprint = await digest(bytes.data);
+      const attached = await frameCall(app, frame.frameId, { type: "ATTACHED", name: artifact.name }).catch(() => undefined);
+      if (attached?.attached && app.uploadedDocuments?.[kind] === fingerprint) continue;
+      const before = frame.observation.fields.length;
+      const result = await frameCall(app, frame.frameId, {
+        type: "CONFIG_FILL",
+        documentId: frame.observation.documentId,
+        documentURL: frame.observation.url,
+        profile,
+        onlyKeys: [kind === "cover" ? "coverLetter" : "resume"],
+        uploads: { [kind]: bytes },
+      }).catch((error: Error) => ({ statuses: [{ key: kind, status: "failed", reason: error.message }] }));
+      if (!alive(app, operation)) return "stop";
+      const statuses = (result.statuses || []) as { key: string; status: string; reason?: string }[];
+      app.configNotes = [
+        ...(app.configNotes || []),
+        ...statuses
+          .filter((status) => status.status !== "filled")
+          .map((status) => `upload ${status.key}: ${status.reason || status.status}`.slice(0, 200)),
+      ].slice(0, 80);
+      if (statuses.some((status) => status.status === "filled")) {
+        configUploads.add(key);
+        app.uploadedDocuments = { ...app.uploadedDocuments, [kind]: fingerprint };
+        await persist();
+        uploaded = true;
+        // Uploaded first: until the slot shows the file and the site's
+        // parse has stopped changing the form (the same values on two
+        // reads a second apart, from the fourth second), or 30 seconds.
+        // The fill that follows then writes the profile's values last.
+        if (resumeFirst) {
+          let previous = "";
+          let steady = 0;
+          for (let waited = 0; waited < 30 && steady < 2; waited++) {
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            if (!alive(app, operation)) return "stop";
+            const now: Observation | undefined = await frameCall(app, frame.frameId, { type: "INSPECT", documentId: frame.observation.documentId }).catch(() => undefined);
+            const form = now && !now.resumeSlotOpen ? JSON.stringify(now.fields.map((field) => [field.id, field.value])) : "";
+            steady = form && form === previous && waited >= 3 ? steady + 1 : 0;
+            previous = form;
+          }
+          continue;
+        }
+        // Until the site has reloaded the form (it loses fields), or for
+        // ten seconds when it does not.
+        for (let waited = 0; waited < 10; waited++) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          if (!alive(app, operation)) return "stop";
+          const now: Observation | undefined = await frameCall(app, frame.frameId, { type: "INSPECT", documentId: frame.observation.documentId }).catch(() => undefined);
+          if (now && now.fields.length < before) {
+            await new Promise((resolve) => setTimeout(resolve, 2000));
+            break;
+          }
+        }
+      } else
+        for (const status of statuses)
+          // A page with no upload of this kind is not a failed upload.
+          if (status.status === "failed" && !/No configured selector matched/i.test(status.reason || ""))
+            issues.push(
+              `${kind === "cover" ? "Cover letter" : "Resume"} upload did not finish${status.reason ? ` (${status.reason})` : ""}. Upload it yourself.`.slice(0, 350),
+            );
+    }
+    if (!alive(app, operation)) return "stop";
+    // The form may have been reset by the uploads: fill it again from the
+    // start. The documents are not uploaded twice. A resume sent first is
+    // followed by the fill whether or not it went up; that pass reports a
+    // failed upload as any other.
+    if (uploaded || configResumeFirst) {
+      // A new generation request follows (its answers are for the form as
+      // it now is); the backend hands back this application's finished
+      // documents instead of tailoring them again.
+      app.operation++;
+      app.jobId = undefined;
+      app.artifacts = [];
+      app.narrative = undefined;
+      app.generationKey = undefined;
+      touch(
+        app,
+        "queued",
+        configResumeFirst
+          ? "Resume uploaded first; the site filled the form from it. Filling the form…"
+          : "Documents uploaded; the site reloaded the form. Filling it again…",
+      );
+      await persist();
+      return "stop";
+    }
   }
 }
 
