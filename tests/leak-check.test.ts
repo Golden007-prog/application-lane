@@ -120,3 +120,22 @@ test("the leak check finds the data folder as the backend does", () => {
   assert.equal(dataDirectory({}, "/nowhere", "linux", "/home/alex", "/nowhere"), "/home/alex/.local/share/application-lane");
   assert.equal(dataDirectory({ XDG_DATA_HOME: "/xdg" }, "/nowhere", "linux", "/home/alex", "/nowhere"), "/xdg/application-lane");
 });
+
+test("a term allowed for commits only is still caught in what is shared from the data folder", async () => {
+  const { mkdtempSync, writeFileSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const { join } = await import("node:path");
+  const { loadTerms } = await import("../scripts/leak-check.mjs");
+  const dir = mkdtempSync(join(tmpdir(), "leak-allow-"));
+  try {
+    writeFileSync(join(dir, "state.json"), JSON.stringify({ profile: { firstName: "Dana", lastName: "Whitfield", email: "morgan.ellery@mailbox.test" } }));
+    writeFileSync(join(dir, "leak-allow-commits.txt"), "morgan.ellery@mailbox.test\nmorgan.ellery\n");
+    const line = [{ where: "CODE_OF_CONDUCT.md:22", line: "email the maintainer at morgan.ellery@mailbox.test." }];
+    // Commits (and the public export): allowed.
+    assert.deepEqual(findLeaks(line, loadTerms(dir, { commits: true })), []);
+    // Shared reports and replies (the default): still found.
+    assert.ok(findLeaks(line, loadTerms(dir)).length > 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -12,8 +12,12 @@
 // references, profile links), the companies and job-site addresses of the
 // applications in the queue, and two optional files there:
 //   leak-terms.txt   more terms, one per line (a former employer, a nickname)
-//   leak-allow.txt   terms that are fine to commit, one per line (a job-site
+//   leak-allow.txt   terms that are fine anywhere, one per line (a job-site
 //                    vendor that is also a company you applied to)
+//   leak-allow-commits.txt
+//                    terms fine to commit but still removed from what is
+//                    shared from your data (issue reports and replies on
+//                    GitHub): your own contact address in the code of conduct
 // The data folder is found as the backend finds it: --data-dir, LANE_DATA_DIR,
 // a .local/ with a config.json here or beside this script, or the platform's
 // app-data folder. With no data there (another contributor, CI) nothing is
@@ -54,11 +58,11 @@ function readJson(path) {
   }
 }
 
-export function loadTerms(dir) {
+export function loadTerms(dir, { commits = false } = {}) {
   const state = readJson(join(dir, "state.json"));
   const queue = readJson(join(dir, "queue.json"));
   const applications = Array.isArray(queue?.applications) ? queue.applications : Object.values(queue?.applications || {});
-  return collectTerms({ profile: state?.profile, applications, extra: readLines(join(dir, "leak-terms.txt")), allow: readLines(join(dir, "leak-allow.txt")) });
+  return collectTerms({ profile: state?.profile, applications, extra: readLines(join(dir, "leak-terms.txt")), allow: [...readLines(join(dir, "leak-allow.txt")), ...(commits ? readLines(join(dir, "leak-allow-commits.txt")) : [])] });
 }
 
 const git = (args, cwd) => execFileSync("git", args, { cwd, encoding: "utf8", maxBuffer: 1 << 30 });
@@ -135,7 +139,7 @@ export function listedFileLines(dir, files) {
 
 // For the public export: what of the applicant's own details the given files hold.
 export function leakHits(dir, files, dataDir = dataDirectory()) {
-  const terms = existsSync(join(dataDir, "state.json")) ? loadTerms(dataDir) : [];
+  const terms = existsSync(join(dataDir, "state.json")) ? loadTerms(dataDir, { commits: true }) : [];
   return { terms: terms.length, hits: findLeaks(listedFileLines(dir, files).filter(({ where }) => !wordLists.test(where)), terms) };
 }
 
@@ -143,7 +147,7 @@ function main(argv) {
   const args = argv.slice(2);
   const option = (name) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
   const dir = option("--data-dir") ? resolve(option("--data-dir")) : dataDirectory();
-  const terms = existsSync(join(dir, "state.json")) ? loadTerms(dir) : [];
+  const terms = existsSync(join(dir, "state.json")) ? loadTerms(dir, { commits: true }) : [];
   if (args.includes("--terms")) {
     for (const { kind, term } of terms) console.log(`${kind}: ${term}`);
     console.log(`${terms.length} terms from ${dir}`);
@@ -182,7 +186,8 @@ function main(argv) {
       console.error(`  ${found[0].kind} "${term}": ${found.length} line(s), first ${found[0].where}`);
   }
   console.error(`\nleak check: ${hits.length} personal detail(s) found. Replace them with neutral ones (Alex Rivera, Acme, Penn State),`);
-  console.error(`or list a term that is fine to commit in ${join(dir, "leak-allow.txt")}.`);
+  console.error(`or list a term that is fine to commit in ${join(dir, "leak-allow-commits.txt")} (still removed from shared reports),`);
+  console.error(`or one that is fine anywhere in ${join(dir, "leak-allow.txt")}.`);
   return 1;
 }
 

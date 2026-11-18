@@ -19,7 +19,7 @@ Application Lane is used by people looking for work, which is often a stressful 
 
 ## Reporting
 
-To report a problem in confidence, email the maintainer at the address on their GitHub profile. Say where it happened (a link is enough) and what happened. Reports are read only by the maintainers and kept private. You will hear back within a week.
+To report a problem in confidence, email the maintainer at nikman70055@gmail.com. Say where it happened (a link is enough) and what happened. Reports are read only by the maintainers and kept private. You will hear back within a week.
 
 ## What maintainers may do
 

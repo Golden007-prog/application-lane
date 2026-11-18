@@ -46,7 +46,7 @@ npx playwright test tests/browser/extension.spec.ts -g "<pattern>"
 ## Code style
 
 - TypeScript throughout; keep `npm run check` clean.
-- Format with Prettier (`npx prettier --write <files>`). Match the style of the surrounding code.
+- Match the style of the surrounding code, and leave lines you did not change as they are. The codebase is not formatted with Prettier as a whole, so running it over a file rewraps code that has nothing to do with your change and buries it in the diff. Format only what you wrote (most editors can format a selection).
 - Comments explain *why*, in plain sentences.
 - Add or update a test with every behavior change. Site-rule changes need a fixture-based test.
 - User-facing text is plain and friendly. The extension must never submit, click Next or overwrite a user's edit on its own (Next step and Submit press the page's button only on the user's request), and must never sign or tick a consent box the applicant's settings do not allow. Every click goes through `src/engine/page/click-gate.ts`; changes that weaken these guarantees will not be accepted.
