@@ -8,6 +8,10 @@ Application Lane is MIT-licensed (see `LICENSE`). It includes or depends on the 
 
 The English word list used to check cover letters for misspellings comes from SCOWL (Spell Checker Oriented Word Lists) by Kevin Atkinson and contributors, as packaged by Debian (`wamerican`). Its copyright and permission notice is kept beside it in `src/server/words/COPYRIGHT` and must stay with the file. In short: permission to use, copy, modify, distribute and sell the lists is granted without fee, provided the copyright and permission notices are retained; the lists are provided "as is".
 
+### Site rules — `src/engine/config/sites/`
+
+The site rules were made for this project by testing applications: each rule was written and checked against real application forms on that site, and against the project's own test fixtures built from them. They are this project's own work, covered by its MIT license.
+
 ### Tailoring engine — `tailor/`
 
 The Python résumé and cover-letter tailoring engine was adapted from the project owner's own earlier job-apply tooling. It is the owner's own work and is covered by this repository's MIT license.
