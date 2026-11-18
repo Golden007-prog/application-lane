@@ -220,6 +220,7 @@ export async function resume(app: Application, continuation?: { operation: numbe
   app.jobId = undefined;
   app.artifacts = [];
   app.narrative = undefined;
+  app.unchecked = undefined;
   app.generationKey = undefined;
   app.missing = [];
   // A new request supersedes the previous attempt; close it in the history.

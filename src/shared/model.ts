@@ -480,7 +480,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-17-interpreter-parts";
+export const CONTENT_VERSION = "2026-11-17-read-back";
 export type Proposal = {
   fieldId: string;
   value: string;
@@ -554,10 +554,40 @@ export const jobFitSchema = z.object({
   needsPosting: z.boolean().optional(),
 });
 export type JobFit = z.infer<typeof jobFitSchema>;
+export const uncheckedSchema = z.object({
+  reason: z.enum(["fast", "no-second-model", "failed"]),
+  drafts: z.array(z.string().max(200)).max(80),
+});
+export type Unchecked = z.infer<typeof uncheckedSchema>;
+// What a card says about drafts no second model checked: what they are, and why.
+export function uncheckedText(unchecked: Unchecked): string {
+  const answers = unchecked.drafts.filter((id) => id.startsWith("answer:")).length;
+  const parts = [
+    unchecked.drafts.some((id) => id.startsWith("letter:")) && "the cover letter",
+    answers && (answers === 1 ? "an answer" : `${answers} answers`),
+    unchecked.drafts.includes("summary") && "the resume summary",
+  ].filter(Boolean);
+  const why =
+    unchecked.reason === "fast" ? "checking is set to Fast" : unchecked.reason === "no-second-model" ? "no other model in your Drafting order could check them" : "the check did not finish";
+  return `Not checked by a second model (${why}): ${parts.join(", ") || "some drafts"}. Read them before submitting.`;
+}
+// The site rules' failed steps worth showing (Application.configNotes holds
+// them all, "<key>: <reason>"): not those that found no field on this form or
+// no saved value for it, nor a deliberate refusal (a question the rule
+// declined to answer), nor a field the applicant edited themselves.
+const expectedRuleOutcome =
+  /: (No configured selector matched|No confirmed profile value|Repeated section requires a profile row|Configuration requires manual input|Field already has a value|Field is locked by a trusted user edit)\.$|: (This question asks whether|Generic authorization does not|Authorization does not confirm|Assistance in an unrelated question|An employment agreement is not|A permanent address is not|This asks for someone else's name|This field holds a different date)/;
+export function siteRuleProblems(notes: string[] = []): string[] {
+  return notes.filter((note) => /^[\w.[\]-]+(?: [\w.[\]-]+)?: /.test(note) && !expectedRuleOutcome.test(note));
+}
 export const narrativeSchema = z.object({
   draftedWith: z.object({ provider: z.enum(["http", "claude-cli", "codex-cli"]), model: z.string(), name: z.string().max(60).optional() }).optional(),
   // Locally generated review notices, never copied from model output.
   warnings: z.array(z.string().max(350)).max(10).optional(),
+  // Drafts no second model checked against the profile, and why: the
+  // applicant's "fast" checking, no other model to check with, or a check
+  // that failed. Ids: "answer:<field id>", "letter:<n>", "summary".
+  unchecked: uncheckedSchema.optional(),
   resume: z
     .array(z.object({ factId: z.string(), text: z.string().max(3000) }))
     .min(1)
@@ -672,6 +702,8 @@ export type AnswerDraft = {
   source?: string;
   draftedWith?: DraftProvider;
   skipReason?: string;
+  // No second model checked it against the profile.
+  unchecked?: boolean;
 };
 export type AnswerSession = {
   jobId: string;
@@ -746,6 +778,8 @@ export type Application = {
   sourceDescription?: string;
   // The latest fill's failed site-config steps, for issue reports.
   configNotes?: string[];
+  // Drafts for this application no second model checked (Narrative.unchecked).
+  unchecked?: Unchecked;
   // A fingerprint of each document this application uploaded, by kind: a
   // file of the same name in the slot may be an earlier application's.
   // By kind; an education entry's own transcript as "transcript:<entry>".

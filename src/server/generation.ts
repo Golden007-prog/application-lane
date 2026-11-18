@@ -1,4 +1,5 @@
-import { type GenerationJob, type GenerationRequest, type Profile, type JobFit, type Narrative, type Field, type Artifact, forRole } from "../shared/model";
+import { type GenerationJob, type GenerationRequest, type Profile, type JobFit, type Narrative, type Field, type Artifact, type Unchecked, forRole } from "../shared/model";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { type Posting, fetchPosting, fetchPostingPage } from "./posting";
 import { type Store, type Config } from "./store";
 import { type Tailor, type TailoringPlan, type TailoredDocuments, buildTailored } from "./job-apply";
@@ -13,12 +14,34 @@ import { applicationProfile, applicationGraduation, withGraduation } from "./pro
 import { join, resolve } from "node:path";
 import { copyFile } from "node:fs/promises";
 import { exportDocuments } from "./export";
-import { CHECKING_BUDGET_MS, Generate, remember } from "./completion";
+import { CHECKING_BUDGET_MS, Generate, callBudget, remember } from "./completion";
 import { defaultAnswer, defaultTailor, provider } from "./draft-letter";
 import { DraftRequest, UNRANKED, answeredRecord, distinctWarnings, documentsKey, foundInProfile, leansOnCutText, namesNoDuration, narrativeField, postingReadable, questionKey, wantsLetter } from "./draft-checks";
 export * from "./draft-checks";
 export * from "./draft-letter";
 export * from "./completion";
+
+// The drafts of the job in hand no second model checked, and why: kept by
+// checkDrafts across all its calls (a draft checked later is taken off), and
+// read when the job's narrative is written.
+type CheckReason = Unchecked["reason"];
+const draftChecks = new AsyncLocalStorage<Map<string, CheckReason>>();
+const noteUnchecked = (ids: string[], reason: CheckReason) => {
+  const record = draftChecks.getStore();
+  for (const id of ids) record?.set(id, reason);
+};
+const noteChecked = (ids: string[]) => {
+  const record = draftChecks.getStore();
+  for (const id of ids) record?.delete(id);
+};
+// The worst reason first: a failed check, then none to check with, then the
+// applicant's own Fast setting.
+export function uncheckedSummary(record = draftChecks.getStore()): Unchecked | undefined {
+  if (!record?.size) return undefined;
+  const reasons = new Set(record.values());
+  const reason: CheckReason = reasons.has("failed") ? "failed" : reasons.has("no-second-model") ? "no-second-model" : "fast";
+  return { reason, drafts: [...record.keys()].slice(0, 80) };
+}
 
 export class GenerationQueue {
   private pending: {
@@ -114,7 +137,8 @@ export class GenerationQueue {
       if (task.job.status !== "queued") continue;
       const controller = new AbortController();
       this.running.set(task.job.id, controller);
-      const completion = this.execute(task, controller).finally(() => {
+      // Its model requests counted against the limit, wherever they are made.
+      const completion = draftChecks.run(new Map(), () => callBudget.run({ used: 0, limit: this.config.draftCallLimit }, () => this.execute(task, controller))).finally(() => {
         this.running.delete(task.job.id);
         this.tasks.delete(task.job.id);
         this.pump();
@@ -232,8 +256,7 @@ export class GenerationQueue {
   ): Promise<{ narrative?: Narrative; written?: WrittenAnswers; warnings: string[] }> {
     const { narrative, plan, written } = drafts;
     const warnings: string[] = [];
-    if (this.config.checking === "fast") return { narrative, written, warnings };
-    const verify = this.verify ?? verifier(this.config);
+    const verify = this.config.checking === "fast" ? undefined : this.verify ?? verifier(this.config);
     const asked = (fieldId: string) => request.fields.find((field) => field.id === fieldId)?.label;
     const label = (fieldId: string) => shortLabel(asked(fieldId) || "a question");
     const items: Draft[] = [
@@ -258,11 +281,16 @@ export class GenerationQueue {
         ? [{ id: "summary", kind: "summary" as const, draftedWith: plan.draftedWith, text: plan.brief.summary_line }]
         : []),
     ];
-    // No model but the one that wrote them. Not repeated on every
-    // application: Settings → Drafting → Checking says so while it lasts
-    // (secondCheckAvailable, verify.ts).
-    if (!verify) return { narrative, written, warnings };
+    // Fast checking, or no model but the one that wrote them. Not a warning
+    // on every application (Settings → Drafting → Checking says so while it
+    // lasts, secondCheckAvailable in verify.ts): the drafts are marked
+    // unchecked, which the card and the answers show.
+    if (!verify) {
+      noteUnchecked(items.map((item) => item.id), this.config.checking === "fast" ? "fast" : "no-second-model");
+      return { narrative, written, warnings };
+    }
     const independent = items.filter((item) => checkers(this.config, item.draftedWith).length);
+    noteUnchecked(items.filter((item) => !independent.includes(item)).map((item) => item.id), "no-second-model");
     if (independent.length < items.length) warnings.push("No other model in your Drafting order could check some drafts, so they need your review without a second model check.");
     items.splice(0, items.length, ...independent);
     if (!items.length) return { narrative, written, warnings };
@@ -283,11 +311,14 @@ export class GenerationQueue {
       verdicts = await verify(items, { profile: profileText, posting }, signal, this.checkingDeadline(signal));
     } catch (error) {
       signal.throwIfAborted();
+      noteUnchecked(items.map((item) => item.id), "failed");
       warnings.push(
         `A second model could not check these drafts against your profile (${(error as Error).message}), so read the answers and letter before submitting.`.slice(0, 350),
       );
       return { narrative, written, warnings };
     }
+    noteUnchecked(items.filter((item) => !verdicts.has(item.id)).map((item) => item.id), "failed");
+    noteChecked(items.filter((item) => verdicts.has(item.id)).map((item) => item.id));
     const unchecked = items.filter((item) => !verdicts.has(item.id)).length;
     if (unchecked)
       warnings.push(
@@ -549,6 +580,7 @@ export class GenerationQueue {
               maxLength: field.maxLength, maxWords: field.maxWords,
               source: written.sources[field.id], draftedWith: written.providers?.[field.id],
               ...(!value ? { skipReason: written.reasons?.[field.id] || "The draft was withheld during review. Try drafting it separately or write your answer." } : {}),
+              ...(value && draftChecks.getStore()?.has(`answer:${field.id}`) ? { unchecked: true } : {}),
             };
           });
         job.warnings = [...new Set([...written.warnings, ...checked.warnings])];
@@ -687,7 +719,11 @@ export class GenerationQueue {
           }),
         );
         job.artifacts.push(...transcripts);
-        job.narrative = { ...previous.narrative!, answers, warnings: distinctWarnings(warnings) || [] };
+        // The earlier step's documents keep their own record.
+        const earlier = previous.narrative!.unchecked?.drafts.filter((id) => !id.startsWith("answer:")) || [];
+        const record = new Map<string, CheckReason>(earlier.map((id) => [id, previous.narrative!.unchecked!.reason]));
+        for (const [id, reason] of draftChecks.getStore() || []) record.set(id, reason);
+        job.narrative = { ...previous.narrative!, answers, warnings: distinctWarnings(warnings) || [], unchecked: uncheckedSummary(record) };
         job.fit = await fitting;
         job.status = "complete";
         return;
@@ -925,7 +961,7 @@ export class GenerationQueue {
         throw new Error("Generation cancelled or profile changed.");
       const transcripts = await this.transcripts(request);
       job.artifacts = [...artifacts, ...transcripts];
-      job.narrative = { ...narrative, warnings: distinctWarnings(narrative.warnings) };
+      job.narrative = { ...narrative, warnings: distinctWarnings(narrative.warnings), unchecked: uncheckedSummary() };
       if (!job.narrative.warnings) delete job.narrative.warnings;
       job.status = "complete";
     } catch (error) {

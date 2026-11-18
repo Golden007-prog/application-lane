@@ -44,6 +44,11 @@ const configObject = z.object({
   model: z.string().default(""),
   apiKey: z.string().default(""),
   generationConcurrency: z.number().int().min(1).max(4).default(2),
+  // The most model requests one drafting job may make (an application's
+  // step: its letter, answers, checks and retries, and every provider tried
+  // for each). An application takes about 7-15; the limit stops a loop of
+  // failures and retries from spending a subscription's usage.
+  draftCallLimit: z.number().int().min(5).max(500).default(40),
   fontPath: z.string().optional(),
   // A checkout of the applicant's own LaTeX resume sources. When set, the
   // resume PDF is compiled from the variant that fits the posting instead of

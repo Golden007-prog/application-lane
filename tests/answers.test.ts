@@ -6,7 +6,7 @@ import { randomUUID } from "node:crypto";
 import { mkdir, mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { profileSchema, type Field, type GenerationRequest } from "../src/shared/model";
+import { profileSchema, uncheckedText, type Field, type GenerationRequest } from "../src/shared/model";
 import { leftReasons, pickOption, rankOption } from "../src/shared/answers";
 import {
   applicationQuestion,
@@ -2091,4 +2091,49 @@ test("a question listing the tools the applicant has used asks for hands-on tool
   const [tools, other] = JSON.parse(sent().messages[1].content).questions;
   assert.match(tools.note, /AI assistants, coding tools and APIs/);
   assert.equal(other.note, undefined);
+});
+
+test("drafts no second model checked are recorded with why, and checked ones are not", async () => {
+  const store = new Store(await mkdtemp(join(tmpdir(), "lane-unchecked-")));
+  await store.init();
+  store.data.profile = structuredClone(profile);
+  const run = async (checking: "thorough" | "fast", verify: (drafts: Draft[]) => Promise<Map<string, Verdict>>) => {
+    const config = configSchema.parse({ postingLookup: false, token: "synthetic-token-".repeat(4), model: "fixture", endpoint: "http://127.0.0.1:9/v1", tailorDir: "unused", checking });
+    const queue = new GenerationQueue(
+      store,
+      config,
+      async () => ({
+        resume: [{ factId: "a", text: profile.facts[0].text }],
+        coverLetter: [{ text: "Dear Hiring Team,", factIds: [] }, { text: profile.facts[0].text, factIds: ["a"] }],
+        answers: [],
+      }),
+      async () => {
+        throw new Error("no tailoring in this test");
+      },
+      async () => ({ answers: [{ fieldId: "why", value: "I built a TypeScript web application.", factIds: [] }], warnings: [], withheld: [], sources: {} }),
+      async () => undefined,
+      async (drafts) => verify(drafts),
+    );
+    const job = await queue.enqueue(request([field("why"), field("Cover Letter", { kind: "file", documentKind: "cover" })]));
+    const deadline = Date.now() + 30000;
+    while (["queued", "running"].includes(job.status)) {
+      assert.ok(Date.now() < deadline);
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    assert.equal(job.status, "complete", job.error);
+    return job.narrative!.unchecked;
+  };
+  const clean = (drafts: Draft[]) => new Map(drafts.map((draft) => [draft.id, { unsupported: [], filler: [] } as unknown as Verdict]));
+  // The check read the letter but not the answer: the answer is unchecked, as a failed check.
+  const partly = await run("thorough", async (drafts) => new Map([...clean(drafts)].filter(([id]) => !id.startsWith("answer:"))));
+  assert.deepEqual(partly, { reason: "failed", drafts: ["answer:why"] });
+  assert.match(uncheckedText(partly!), /^Not checked by a second model \(the check did not finish\): an answer\./);
+  // Fast checking: every draft, for that reason, and the verifier never asked.
+  let asked = false;
+  const fast = await run("fast", async (drafts) => ((asked = true), clean(drafts)));
+  assert.equal(asked, false);
+  assert.equal(fast?.reason, "fast");
+  assert.ok(fast!.drafts.includes("answer:why") && fast!.drafts.some((id) => id.startsWith("letter:")));
+  // Everything checked: no record.
+  assert.equal(await run("thorough", async (drafts) => clean(drafts)), undefined);
 });

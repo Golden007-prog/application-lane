@@ -665,6 +665,13 @@ input[type="radio"] {
   color: var(--text-muted);
   margin: 6px 0;
 }
+/* Drafts no second model checked: a quiet line, not a problem to resolve. */
+.app-unchecked {
+  font-size: 12px;
+  margin: 6px 0;
+  padding-left: 8px;
+  border-left: 2px solid var(--warning);
+}
 .attach-controls input[type="search"],
 .move-tab input[type="search"] {
   width: 100%;

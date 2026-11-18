@@ -4,6 +4,7 @@ import { type GenerationRequest, type Profile, type Narrative } from "../shared/
 import { type Config, type DraftProviderConfig } from "./store";
 import { cliDefaults, CliFailure, cliComplete } from "./cli-provider";
 import { setTimeout as delay } from "node:timers/promises";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { closeTruncatedJson, record } from "./draft-checks";
 
 
@@ -187,6 +188,13 @@ export function cliNotice(config: Config, exchange: Exchange): string[] {
   ];
 }
 
+// The model requests the drafting job in hand has made, against its limit
+// (Config.draftCallLimit): set by the queue around each job, and carried
+// through every await of it. Calls made outside a job are not counted.
+export const callBudget = new AsyncLocalStorage<{ used: number; limit: number }>();
+export const callLimitReason = (limit: number) =>
+  `it reached this application's limit of ${limit} model requests (draftCallLimit in config.json)`;
+
 // One JSON-object completion under the caller's budget. With a CLI provider
 // the CLI is asked first and the endpoint answers only if it fails.
 export async function completeJSON(
@@ -203,6 +211,12 @@ export async function completeJSON(
   let lastFailure: unknown;
   for (const step of providers) {
     budget.throwIfAborted();
+    // Each provider tried is a request, failed or not.
+    const calls = callBudget.getStore();
+    if (calls) {
+      if (calls.used >= calls.limit) throw new ProviderFailure("unavailable", callLimitReason(calls.limit));
+      calls.used++;
+    }
     const { provider, model } = step;
     const name = step.name || providerName(provider, model);
     const command = step.command || (provider === "claude-cli" ? process.env.LANE_CLAUDE_BIN || "claude" : provider === "codex-cli" ? process.env.LANE_CODEX_BIN || "codex" : config.endpoint);

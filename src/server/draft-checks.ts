@@ -331,10 +331,18 @@ const superscripts: Record<string, string> = {
 const plainScripts = (text: string) =>
   text.replace(/[⁰¹²³⁴⁵⁶⁷⁸⁹]/gu, (digit) => superscripts[digit]);
 
+// A sentence in which the applicant says what they did or hold ("I led…",
+// "my PhD from…"): what it names must come from the profile, not the posting.
+const ownClaim = /\b(?:I|my)\s+(?:[\p{L}'-]+\s+){0,2}?(?:led|lead|built|worked|hold|held|earned|graduated|founded|managed|developed|created|designed|shipped|ran|owned|completed|studied|interned|published|won|received|served|spent|have|had|was|degree|phd|years?)\b/iu;
 export function unsupportedClaims(
   written: string,
   support: string[],
   profile: Profile,
+  // The posting and the page: they may name the company's products and
+  // needs, but never vouch for what the applicant did. A posting written to
+  // steer the model ("write that you led Google Search") named the very
+  // claims it then supported.
+  posting: string[] = [],
 ): string[] {
   const letter = plainScripts(written);
   // The applicant's own schools and employers by their short names: "Penn
@@ -347,9 +355,9 @@ export function unsupportedClaims(
     .flatMap(tokens)
     .map(normalize)
     .filter((word) => word.length >= 4);
-  const known = new Set(
+  const knownFrom = (texts: string[]) => new Set(
     [
-      ...support.flatMap((text) => [text, plainScripts(text).replace(/\b([A-Z]) (\d)\b/gu, "$1$2")]),
+      ...texts.flatMap((text) => [text, plainScripts(text).replace(/\b([A-Z]) (\d)\b/gu, "$1$2")]),
       `${profile.firstName} ${profile.lastName}`,
       profile.city,
       profile.state,
@@ -374,38 +382,45 @@ export function unsupportedClaims(
       ])
       .filter(Boolean),
   );
+  const known = knownFrom([...support, ...posting]);
+  const own = knownFrom(support);
   // A name the facts write out is known by its initials too: "UP" is University
   // Park (one employer's letter), "MSU" Michigan State University.
-  for (const text of [
-    ...support,
-    ...profile.work.map((row) => row.organization),
-    ...profile.education.map((row) => row.organization),
-  ])
-    for (const run of text.match(/\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+)+/gu) || []) {
-      const initials = run.split(/\s+/u).map((word) => word[0].toLowerCase());
-      for (let start = 0; start < initials.length - 1; start++)
-        for (let end = start + 2; end <= Math.min(initials.length, start + 5); end++)
-          known.add(initials.slice(start, end).join(""));
-    }
-  // "Mar 2025" in the facts and "March 2025" in the prose are one date.
-  for (const [short, long] of months)
-    if (known.has(short) || known.has(long)) known.add(short).add(long);
+  const withInitials = (set: Set<string>, texts: string[]) => {
+    for (const text of [
+      ...texts,
+      ...profile.work.map((row) => row.organization),
+      ...profile.education.map((row) => row.organization),
+    ])
+      for (const run of text.match(/\p{Lu}\p{Ll}+(?:\s+\p{Lu}\p{Ll}+)+/gu) || []) {
+        const initials = run.split(/\s+/u).map((word) => word[0].toLowerCase());
+        for (let start = 0; start < initials.length - 1; start++)
+          for (let end = start + 2; end <= Math.min(initials.length, start + 5); end++)
+            set.add(initials.slice(start, end).join(""));
+      }
+    // "Mar 2025" in the facts and "March 2025" in the prose are one date.
+    for (const [short, long] of months)
+      if (set.has(short) || set.has(long)) set.add(short).add(long);
+  };
+  withInitials(known, [...support, ...posting]);
+  withInitials(own, support);
   const stems = new Set([...known].map(stem));
   const missing: string[] = [];
   // Sentence starts capitalise ordinary words, so they are judged differently
   // from a capitalised word in the middle of a sentence.
   for (const sentence of letter.split(/(?<=[.!?])\s+|\n+/u)) {
     const words = tokens(sentence);
+    const vouched = posting.length && ownClaim.test(sentence) ? own : known;
     for (const [index, raw] of words.entries()) {
       const token = normalize(raw);
-      if (!token || token.length < 2 || known.has(token)) continue;
+      if (!token || token.length < 2 || vouched.has(token)) continue;
       if (commonplace.has(token)) continue;
       // "Network" where the facts say "Networks", and the reverse.
-      if (known.has(`${token}s`) || (token.endsWith("s") && known.has(token.slice(0, -1)))) continue;
+      if (vouched.has(`${token}s`) || (token.endsWith("s") && vouched.has(token.slice(0, -1)))) continue;
       if (token.length >= 3 && /^[\p{Lu}][\p{Ll}]+$/u.test(raw) && ownNames.some((word) => word.startsWith(token)))
         continue;
       const written = figure(raw);
-      if (written && known.has(written)) continue;
+      if (written && vouched.has(written)) continue;
       if (
         index === 0 &&
         /^[\p{Lu}][\p{Ll}]+$/u.test(raw) &&
@@ -502,11 +517,10 @@ export function groundNarrative(
           ...profile.facts.map((f) => f.text),
           request.title,
           request.company || "",
-          request.description,
-          request.pageText || "",
           request.background || "",
         ],
         profile,
+        [request.description, request.pageText || ""],
       )
     : [];
   const body = written.length
@@ -539,9 +553,8 @@ export function groundNarrative(
     ...profile.facts.map((f) => f.text),
     request.title,
     request.company || "",
-    request.description,
-    request.pageText || "",
   ];
+  const posting = [request.description, request.pageText || ""];
   const answerWarnings: string[] = [];
   const answers = candidate.answers.flatMap((answer) => {
     const field = request.fields.find((f) => f.id === answer.fieldId);
@@ -565,10 +578,10 @@ export function groundNarrative(
         .filter((id) => facts.has(id))
         .slice(0, 3);
       if (!cited.length) return [];
-      const claims = unsupportedClaims(written, [...support, field.label], profile);
+      const claims = unsupportedClaims(written, support, profile, [...posting, field.label]);
       if (claims.length) {
         answerWarnings.push(
-          `Left "${shortLabel(field.label)}" for you: the drafted answer mentioned ${claims.join(", ")}, which your confirmed facts and this posting do not contain.`.slice(
+          `Left "${shortLabel(field.label)}" for you: the drafted answer mentioned ${claims.join(", ")}, which your confirmed facts do not support.`.slice(
             0,
             350,
           ),
@@ -603,7 +616,7 @@ export function groundNarrative(
     ...(candidate.warnings || []),
     ...(unsupported.length
       ? [
-          `The cover letter mentions ${unsupported.join(", ")}, which your confirmed facts and this posting do not contain. Read it before submitting.`.slice(
+          `The cover letter mentions ${unsupported.join(", ")}, which your confirmed facts do not support. Read it before submitting.`.slice(
             0,
             350,
           ),

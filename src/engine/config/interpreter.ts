@@ -238,6 +238,16 @@ const promptSelection = (element: Element): string | undefined => {
   return selected.join(", ");
 };
 
+// A plain write of a value into a box or a list, whose result can be read
+// back. Not a click, an event, a clear, a scroll, or a checkbox or radio (a
+// rule may untick one on purpose).
+const readBackMethods = new Set(["default", "defaultWithoutBlur", "setValue", "setValueOnly", "react", "jQuery"]);
+function keepsTypedValue(element: Element, method: string): boolean {
+  if (!readBackMethods.has(method)) return false;
+  if (isTag(element, "textarea") || isTag(element, "select")) return true;
+  return isTag(element, "input") && !["checkbox", "radio", "file", "hidden"].includes((element as HTMLInputElement).type);
+}
+
 const textValue = (element: Element) => {
   const paylocity = element.closest(".pcty-input-select__input");
   if (paylocity) {
@@ -2539,10 +2549,16 @@ export async function interpretConfig(
         (!textValue(element) || options.isReplaceable?.(element))
       ) {
         try {
-          if (await fillFallback(element, values, root, globals, options, key === "address" ? "trustedType" : "react")) {
+          const method = key === "address" ? "trustedType" : "react";
+          if (await fillFallback(element, values, root, globals, options, method)) {
             used.add(element);
-            results.push({ key, status: "filled" });
-            state.completed = true;
+            // Read back, as a configured write is (applyChoice).
+            if (keepsTypedValue(element, method) && (values[0] || "").trim() && !(textValue(element) || "").trim())
+              state.lastReason = "The site did not keep the value it was given.";
+            else {
+              results.push({ key, status: "filled" });
+              state.completed = true;
+            }
           }
         } catch (error) {
           if (isAbortError(error)) throw error;
@@ -3449,6 +3465,12 @@ async function applyChoice(
         signal: options.signal,
         values: [...values],
       });
+      // Read back: a value the site did not keep (a controlled field that
+      // put its own back, a box that refused it) is no fill, and the general
+      // filler gets its turn. A site may reformat what it keeps ("(555)
+      // 010-0199"), so only an empty field counts.
+      if (accepted && keepsTypedValue(element, method) && (values[0] || "").trim() && !(textValue(element) || "").trim())
+        throw new Error("The site did not keep the value it was given.");
     }
     if (!accepted)
       throw new Error("Site did not accept the configured value.");

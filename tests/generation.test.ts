@@ -18,6 +18,9 @@ import {
 } from "../src/shared/model";
 import {
   GenerationQueue,
+  ProviderFailure,
+  callBudget,
+  completeJSON,
   greetingCompany,
   provider,
   unsupportedClaims,
@@ -1283,4 +1286,24 @@ test("a Codex answer is used only when Codex ran no tool", async () => {
   const ran = `${clean}\n{"type":"item.started","item":{"id":"item_2","type":"command_execution","command":"cat ~/.ssh/id_rsa"}}\n{"type":"item.completed","item":{"id":"item_3","type":"file_change"}}`;
   assert.deepEqual(toolsUsed(ran).sort(), ["command_execution", "file_change"]);
   assert.deepEqual(toolsUsed("not json\n\n"), []);
+});
+
+test("a drafting job stops asking the model at its request limit, and calls outside a job are not counted", async (t) => {
+  let requests = 0;
+  const config = await transport(t, (_, res) => {
+    requests++;
+    reply(res, { ok: true });
+  });
+  const body = { messages: [{ role: "system", content: "s" }, { role: "user", content: "u" }] };
+  // Inside a job: three requests allowed, the fourth refused before it is sent.
+  await callBudget.run({ used: 0, limit: 3 }, async () => {
+    for (let i = 0; i < 3; i++) await completeJSON(config, body, signal(), { attempts: 0 });
+    await assert.rejects(completeJSON(config, body, signal(), { attempts: 0 }), (error: Error) => error instanceof ProviderFailure && /limit of 3 model requests/.test(error.message));
+  });
+  assert.equal(requests, 3);
+  // Outside one: no limit.
+  for (let i = 0; i < 5; i++) await completeJSON(config, body, signal(), { attempts: 0 });
+  assert.equal(requests, 8);
+  // The queue sets it from config.json, 40 unless changed.
+  assert.equal(config.draftCallLimit, 40);
 });

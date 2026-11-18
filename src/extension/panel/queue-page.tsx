@@ -8,6 +8,7 @@ import { DRAFT_ONLY_NOTE, draftOnlySite } from "../../shared/matching";
 import { ConnectCard, OnboardingChecklist } from "../onboarding";
 import { Momentum } from "../momentum";
 import { StepButtons } from "../step-buttons";
+import { uncheckedText } from "../../shared/model";
 import { AppIssues, DraftingLink, FillProgress, Icon, PostingPrompt, TailoringBars, active, command, finished, hostname, labels, matchesQuery, openDashboard, postingMissing, postingSource, suggesting, type PanelState } from "../panel";
 
 export function QueuePage({ panel }: { panel: PanelState }) {
@@ -789,6 +790,7 @@ export function QueuePage({ panel }: { panel: PanelState }) {
                 {app.posting && (
                   <p className="app-posting">Documents tailored from {postingSource(app.posting.source)}.</p>
                 )}
+                {app.unchecked && <p className="app-unchecked">{uncheckedText(app.unchecked)}</p>}
                 {app.blockedReason && (
                   <p className="blocked-reason"><strong>Blocked:</strong> {app.blockedReason}</p>
                 )}

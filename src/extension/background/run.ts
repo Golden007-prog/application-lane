@@ -402,7 +402,8 @@ export async function run(app: Application, operation: number) {
       for (const status of result.statuses as { caution?: string }[])
         if (status.caution) writeFailures.push(status.caution);
       // The config steps that failed, kept with the application so an issue
-      // report says which step stopped and why. Not shown on the card.
+      // report says which step stopped and why. The card shows those that
+      // found their field and still failed (siteRuleProblems, model.ts).
       app.configNotes = (result.statuses as { key: string; status: string; reason?: string }[])
         .filter((status) => status.status === "failed")
         .map((status) => `${status.key}: ${status.reason || "failed"}`.slice(0, 200))
@@ -625,6 +626,9 @@ export async function run(app: Application, operation: number) {
 
   touch(app, "filling", "Applying supported answers and attaching documents…");
   await persist();
+  // Drafts no second model checked: a line on the card, not a warning (a
+  // warning would hold every application for review).
+  app.unchecked = job.narrative?.unchecked;
   const generationWarnings = job.narrative?.warnings || [];
   const issues = [...generationWarnings, ...inaccessible, ...writeFailures];
   if (!resumeFirst) {

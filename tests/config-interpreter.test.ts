@@ -2000,3 +2000,48 @@ test("a value that looks right but the site calls invalid is written again", asy
   // The flagged one is typed again; the one the site took is left alone.
   assert.deepEqual(writes, ["address"]);
 });
+
+test("a written value is read back: one the site emptied is not counted as filled, one it reformatted is", async () => {
+  await page.setContent(`
+    <form id="application">
+      <label>First name <input id="first"></label>
+      <label>Last name <input id="last"></label>
+      <label>City <input id="city"></label>
+    </form>
+    <script>
+      // A controlled field that puts its own (empty) value back.
+      document.querySelector('#last').addEventListener('input', (event) => { event.target.value = ''; });
+      // One that keeps the value in its own format.
+      document.querySelector('#city').addEventListener('change', (event) => { event.target.value = event.target.value.toUpperCase(); });
+    </script>
+  `);
+  await page.addScriptTag({ content: bundle });
+  const statuses = await page.evaluate(
+    async ({ globals }) =>
+      (window as any).ConfigEngine.interpretConfig(
+        document,
+        "https://jobs.example.test/apply",
+        {
+          ats: "Fixture", urls: ["https://jobs.example.test/*"], urlsExcluded: [], embeddedPaths: [], pathsExcluded: [],
+          containerPath: [".//form[@id='application']"], containerRequired: true, defaultMethod: "default",
+          submitButtonPaths: [], submittedSuccessPaths: [], trackedInputSelectors: [],
+          inputSelectors: [
+            ["first_name", [".//input[@id='first']"]],
+            ["last_name", [".//input[@id='last']"]],
+            ["city", [".//input[@id='city']"]],
+          ],
+        },
+        globals,
+        {
+          revision: 1, confirmed: true, firstName: "Alex", lastName: "Rivera", email: "", phone: "", city: "Phoenix", state: "",
+          country: "", address: "", postalCode: "", linkedin: "", website: "", facts: [], work: [], education: [], answers: [],
+        },
+      ),
+    { globals },
+  );
+  assert.deepEqual(statuses, [
+    { key: "first_name", status: "filled" },
+    { key: "last_name", status: "failed", reason: "The site did not keep the value it was given." },
+    { key: "city", status: "filled" },
+  ]);
+});

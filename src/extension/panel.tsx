@@ -42,6 +42,8 @@ import {
   legalDetailChoices,
   legalDetailLabels,
   type LegalDetailKey,
+  uncheckedText,
+  siteRuleProblems,
 } from "../shared/model";
 
 // An education entry's own transcript: uploaded to the
@@ -463,6 +465,7 @@ function IssueList({ items, mark }: { items: Issue[]; mark?: string }) {
 export function AppIssues({ app }: { app: Application }) {
   const { answer, check, documents, other } = issueGroups(app);
   const notes = app.missing.filter((item) => noteItem.test(item));
+  const ruleProblems = siteRuleProblems(app.configNotes);
   const count = answer.length + check.length + documents.length + other.length;
   const parts = [
     answer.length && `${answer.length} to answer`,
@@ -483,6 +486,21 @@ export function AppIssues({ app }: { app: Application }) {
           {check.length > 0 && <><h4>Values to check</h4><IssueList items={check} /></>}
           {documents.length > 0 && <><h4>Your documents</h4><IssueList items={documents} /></>}
           {other.length > 0 && <><h4>Other</h4><IssueList items={other} /></>}
+        </details>
+      )}
+      {ruleProblems.length > 0 && (
+        // Folded, and not counted as needing the applicant: the general fill
+        // often filled the same field after the rule's step failed.
+        <details className="app-notes">
+          <summary>
+            {ruleProblems.length} site-rule step{ruleProblems.length === 1 ? "" : "s"} did not work
+          </summary>
+          <p className="app-note">The site's own rules could not complete these. The general fill may have filled the same fields afterwards: check them on the page.</p>
+          <ul>
+            {ruleProblems.map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ul>
         </details>
       )}
       {notes.length > 0 && (
@@ -1510,6 +1528,9 @@ function App() {
             </div>
             <p>{review.title}</p>
             {review.fit && <JobFitAssessment app={review} profileRevision={profile.revision} />}
+            {review.narrative?.unchecked && (
+              <p role="status" className="notice">{uncheckedText(review.narrative.unchecked)}</p>
+            )}
             {review.narrative?.warnings?.map((warning, i) => (
               <p role="status" className="notice" key={i}>
                 {warning}

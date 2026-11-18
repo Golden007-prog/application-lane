@@ -324,12 +324,12 @@ export async function writeAnswers(
       : {};
   const support = [
     context.profile,
-    ...pageFields(request, new Set(fields)).map((field) => field.chosen),
     context.preferences,
     ...profile.facts.map((fact) => fact.text),
     request.title,
-    request.description,
   ];
+  // The page's own text: it may name things, never vouch for the applicant.
+  const posting = [...pageFields(request, new Set(fields)).map((field) => field.chosen), request.description];
   const answers: Narrative["answers"] = [];
   const withhold = (field: Field, reason: string) => {
     withheld.push(field.id);
@@ -372,9 +372,9 @@ export async function writeAnswers(
     // The question is the employer's own wording: a value or principle it
     // names is not an invented one. Checked as drafted: "$100,000" is the
     // profile's wording, the figure "100000" is not.
-    const claims = unsupportedClaims(screened.text, [...support, field.label], profile);
+    const claims = unsupportedClaims(screened.text, support, profile, [...posting, field.label]);
     if (claims.length) {
-      withhold(field, `the drafted answer mentioned ${claims.join(", ")}, which your profile and this posting do not contain`);
+      withhold(field, `the drafted answer mentioned ${claims.join(", ")}, which your profile does not support`);
       continue;
     }
     const text = salaryFigure(field.label, field.kind, screened.text) ?? screened.text;

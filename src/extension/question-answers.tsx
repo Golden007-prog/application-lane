@@ -344,6 +344,7 @@ export function QuestionAnswers({
                     : answer.draftedWith.provider === "codex-cli"
                       ? `Codex (${answer.draftedWith.model})`
                       : answer.draftedWith.model)}
+                  {answer.unchecked && " · not checked by a second model"}
                 </p>
               )}
               {limit && <p role="alert">{limit}</p>}

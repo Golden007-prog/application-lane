@@ -245,10 +245,9 @@ async function writeLetter(
     ...profile.facts.map((fact) => fact.text),
     request.title,
     request.company || "",
-    request.description,
-    request.pageText || "",
     request.background || "",
   ];
+  const posting = [request.description, request.pageText || ""];
   const drafts = await Promise.allSettled(
     Array.from({ length: LETTER_DRAFTS }, async () => {
       const exchange: Exchange = { attempts: 0 };
@@ -260,7 +259,7 @@ async function writeLetter(
         return text ? text.split(/\n{2,}/u).map((part) => part.trim()).filter(Boolean) : [];
       });
       if (!paragraphs.length) throw new ProviderFailure("response", "no paragraphs came back");
-      const unsupported = unsupportedClaims(paragraphs.join("\n"), support, profile).length;
+      const unsupported = unsupportedClaims(paragraphs.join("\n"), support, profile, posting).length;
       return { entries, exchange, penalty: letterPenalty(paragraphs, unsupported) };
     }),
   );
