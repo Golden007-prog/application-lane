@@ -55,7 +55,7 @@ export async function removeWritten(root: string, exported: Exported) {
   const folder = folderOf(root, exported);
   for (const file of exported.files) await rm(join(folder, file.name), { force: true });
   // Only when nothing of the applicant's own is left in it.
-  await rmdir(folder).catch(() => {});
+  await rmdir(folder).catch(() => { /* the folder still holds other files or is gone: leave it */ });
 }
 
 export async function exportDocuments(
@@ -88,7 +88,7 @@ export async function exportDocuments(
     await copyFile(join(dataDirectory, "artifacts", `${artifact.id}.${artifact.format}`), join(folder, name));
     // The applicant's résumé and letter: theirs alone, like the data folder.
     // (On WSL the folder is on Windows, which may refuse modes: no matter.)
-    await chmod(join(folder, name), 0o600).catch(() => {});
+    await chmod(join(folder, name), 0o600).catch(() => { /* best effort: Windows may refuse modes */ });
     exported.files.push({ artifactId: artifact.id, kind: artifact.kind, name });
   }
   job.exported = exported;
@@ -110,8 +110,8 @@ export async function markSent(root: string, exported: Exported, sent: boolean) 
   const taken = await readdir(to).then(() => true, () => false);
   if (taken) {
     // Another export already uses the name there: move the files in beside it.
-    for (const file of exported.files) await rename(join(from, file.name), join(to, file.name)).catch(() => {});
-    await rmdir(from).catch(() => {});
+    for (const file of exported.files) await rename(join(from, file.name), join(to, file.name)).catch(() => { /* a file may already be moved: skip it */ });
+    await rmdir(from).catch(() => { /* the folder may still hold files or be gone: leave it */ });
   } else await rename(from, to);
   exported.sent = sent;
 }

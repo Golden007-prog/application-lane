@@ -20,7 +20,7 @@ export async function releaseDebugger(tabId: number, purpose: string): Promise<v
   const held = claims.get(tabId);
   if (!held || !held.delete(purpose) || held.size) return;
   claims.delete(tabId);
-  await chrome.debugger.detach({ tabId }).catch(() => {});
+  await chrome.debugger.detach({ tabId }).catch(() => { /* the debugger may already be detached: nothing to release */ });
 }
 
 export function holdsDebugger(tabId: number, purpose: string): boolean {

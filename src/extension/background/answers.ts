@@ -40,7 +40,7 @@ export async function draftAnswers(app: Application, tabId: number, ids?: string
     pageUrls: [...new Set([captured.tab.url || app.url, ...app.tabs.map((tab) => tab.url)])].slice(0, 10),
   });
   if (app.operation !== operation || answerRequests.get(app.id) !== stamp) {
-    await api(`/v1/jobs/${job.id}`, "DELETE").catch(() => {});
+    await api(`/v1/jobs/${job.id}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
     throw new Error("The page changed while drafting. Scan and draft again.");
   }
   app.answerSession = {
@@ -181,7 +181,7 @@ export function recordHandAnswersSoon(app: Application) {
   clearTimeout(handAnswerTimers.get(app.id));
   handAnswerTimers.set(app.id, setTimeout(() => {
     handAnswerTimers.delete(app.id);
-    void recordHandAnswers(app).catch(() => {});
+    void recordHandAnswers(app).catch(() => { /* best effort: the hand answers are saved again on the next edit */ });
   }, 4000));
 }
 export async function recordHandAnswers(app: Application) {

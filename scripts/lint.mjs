@@ -1,8 +1,9 @@
 // The project's own lint, on the TypeScript compiler's syntax tree (no
 // extra dependency). Run by `npm run lint` and CI.
 //
-// - A catch block that does nothing says why in a comment: an error dropped
-//   without one reads as an oversight, and the next reader cannot tell.
+// - A catch block that does nothing says why in a comment, and so does a
+//   promise's empty .catch(() => {}) handler: an error dropped without one
+//   reads as an oversight, and the next reader cannot tell.
 //
 //   node scripts/lint.mjs [<file or folder>…]
 import { readFileSync, readdirSync, statSync } from "node:fs";
@@ -30,6 +31,23 @@ export function lint(text, name = "file.ts") {
       if (!/\/\/|\/\*/.test(inside)) {
         const { line } = file.getLineAndCharacterOfPosition(node.getStart(file));
         problems.push({ line: line + 1, rule: "empty-catch", message: "an empty catch block: say in a comment why the error is dropped" });
+      }
+    }
+    // The same for a promise's handler: .catch(() => {}) says why too.
+    if (
+      ts.isCallExpression(node) &&
+      ts.isPropertyAccessExpression(node.expression) &&
+      node.expression.name.text === "catch" &&
+      node.arguments.length === 1 &&
+      (ts.isArrowFunction(node.arguments[0]) || ts.isFunctionExpression(node.arguments[0])) &&
+      ts.isBlock(node.arguments[0].body) &&
+      node.arguments[0].body.statements.length === 0
+    ) {
+      const body = node.arguments[0].body;
+      const inside = text.slice(body.getStart(file) + 1, body.getEnd() - 1);
+      if (!/\/\/|\/\*/.test(inside)) {
+        const { line } = file.getLineAndCharacterOfPosition(node.expression.name.getStart(file));
+        problems.push({ line: line + 1, rule: "empty-catch-handler", message: "an empty .catch handler: say in a comment why the error is dropped" });
       }
     }
     ts.forEachChild(node, visit);

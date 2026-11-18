@@ -33,7 +33,7 @@ export function persist() {
   // Chrome's quota-limited queue storage for every status transition.
   for (const app of snapshot.queue.applications) delete app.narrative;
   bg.saving = bg.saving
-    .catch(() => {})
+    .catch(() => { /* an earlier save's failure was already reported to its own caller */ })
     .then(() => chrome.storage.local.set(snapshot));
   return bg.saving;
 }
@@ -70,7 +70,7 @@ export const initial = (async () => {
       (app.status === "queued" && app.explicitFill)
     ) {
       if (app.fieldFallbackSession?.jobId)
-        void api(`/v1/jobs/${app.fieldFallbackSession.jobId}`, "DELETE").catch(() => {});
+        void api(`/v1/jobs/${app.fieldFallbackSession.jobId}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
       app.fieldFallbackSession = undefined;
       app.operation++;
       app.explicitFill = false;
@@ -78,13 +78,13 @@ export const initial = (async () => {
       app.note =
         "Background worker restarted. Choose Fill this step to re-inspect safely.";
       if (app.jobId)
-        void api(`/v1/jobs/${app.jobId}`, "DELETE").catch(() => {});
+        void api(`/v1/jobs/${app.jobId}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
       if (app.tabId) void broadcast(app, "PAUSE");
     }
   }
   tidyFinishedNotes();
   await persist();
-  void syncSubmissions().catch(() => {});
+  void syncSubmissions().catch(() => { /* best effort: the history syncs again on the next pump */ });
   await chrome.alarms.create("queue-recovery", { periodInMinutes: 0.5 });
   await chrome.alarms.create("inbox", { periodInMinutes: 1 });
   connectLive();
@@ -113,7 +113,7 @@ export async function adoptToken(next: string) {
   bg.token = next;
   await chrome.storage.local.set({ token: bg.token });
   bg.submissionsSynced = false;
-  void syncSubmissions().catch(() => {});
+  void syncSubmissions().catch(() => { /* best effort: the history syncs again on the next pump */ });
   // Paired again (perhaps with another token): the live line starts over.
   bg.live?.close();
   connectLive();
@@ -231,11 +231,11 @@ export async function pageTimers(tabId: number, on: boolean) {
       func: installPageTimers,
       args: [PAGE_TIMER_EVENT, on],
     })
-    .catch(() => {});
+    .catch(() => { /* the tab or frame may be gone: nothing to switch */ });
   for (const frame of await allFrames(tabId).catch(() => []))
     await chrome.tabs
       .sendMessage(tabId, { type: "PAGE_TIMERS", on }, { frameId: frame.frameId })
-      .catch(() => {});
+      .catch(() => { /* the frame may be gone: nothing to tell */ });
 }
 
 // The passes that fill answers after the main fill (the model's, the

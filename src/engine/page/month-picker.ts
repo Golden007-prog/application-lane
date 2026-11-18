@@ -13,11 +13,6 @@ export function setMonthPickerWait(next: (ms: number) => Promise<void>) {
   pause = next;
 }
 
-export function isMonthPicker(element: Element): boolean {
-  return element instanceof HTMLInputElement && element.classList.contains("flatpickr-input") &&
-    Boolean(calendarOf(element)?.querySelector(".flatpickr-monthSelect-month, .flatpickr-monthSelect-months"));
-}
-
 function calendarOf(element: Element): Element | null {
   const root = element.getRootNode() as Document | ShadowRoot;
   const id = element.getAttribute("aria-controls");

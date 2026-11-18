@@ -613,12 +613,12 @@ function usePanel() {
   // While the report dialog is up the background knows it, so a reload waits.
   useEffect(() => {
     if (!issueTarget) return;
-    const beat = () => void chrome.runtime.sendMessage({ type: "REPORT_OPEN", open: true }).catch(() => {});
+    const beat = () => void chrome.runtime.sendMessage({ type: "REPORT_OPEN", open: true }).catch(() => { /* the background may be asleep: the next beat tells it */ });
     beat();
     const timer = setInterval(beat, 5000);
     return () => {
       clearInterval(timer);
-      void chrome.runtime.sendMessage({ type: "REPORT_OPEN", open: false }).catch(() => {});
+      void chrome.runtime.sendMessage({ type: "REPORT_OPEN", open: false }).catch(() => { /* the background may be gone: nothing to tell */ });
     };
   }, [issueTarget]);
   const addIssueImages = async (files: File[]) => {
@@ -888,7 +888,7 @@ function usePanel() {
     void Promise.all([
       api<Array<Omit<IssueReport, "frames">>>("/v1/issues").then(setIssues),
       api<Recording[]>("/v1/recordings").then(setRecordings),
-    ]).catch(() => {});
+    ]).catch(() => { /* best effort: the lists stay as they were */ });
   }, [page, connected]);
   useEffect(() => {
     if (page !== "profile" || !connected) return;
@@ -898,7 +898,7 @@ function usePanel() {
   const refreshRecordings = () =>
     command<typeof activeRecordings>({ type: "RECORDING_STATE" })
       .then(setActiveRecordings)
-      .catch(() => {});
+      .catch(() => { /* best effort: the list stays as it was */ });
   useEffect(() => {
     void refreshRecordings();
   }, [tabContext?.tabId]);

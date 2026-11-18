@@ -12,7 +12,7 @@ import { allFrames, api, frameCall } from "./core";
 export const badgeSent = new Map<number, string>();
 export function badgesSoon() {
   clearTimeout(bg.badgeTimer);
-  bg.badgeTimer = setTimeout(() => void sendBadges().catch(() => {}), 200);
+  bg.badgeTimer = setTimeout(() => void sendBadges().catch(() => { /* badges are cosmetic: the next change sends them again */ }), 200);
 }
 export async function repairState(): Promise<Record<string, string>> {
   if (Date.now() - bg.repairsAsked < 10_000) return bg.repairStates;

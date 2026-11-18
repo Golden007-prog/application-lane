@@ -7,7 +7,7 @@ import { capturing, startCapture, captureHar } from "../network-capture";
 import { bg } from "./state";
 import { Frame, alive, allFrames, frameCall, frameDeadline, persist } from "./core";
 import { captchaFrame, hiddenFrames } from "./badges";
-import { fillable, resume } from "./queue";
+import { carryOnFailed, fillable, resume } from "./queue";
 import { invalidate } from "./run";
 import { clearFieldFallback } from "./field-fallback";
 import { startEvidence } from "./evidence";
@@ -286,7 +286,7 @@ export async function useApply(app: Application, tabId: number, operation: numbe
   setTimeout(() => {
     if (app.applyUsed?.operation === operation && app.operation === operation && app.tabId === tabId && app.status === "awaiting-user") {
       app.applyUsed.operation = -1;
-      void resume(app).catch(() => {});
+      void resume(app).catch((error) => carryOnFailed(app, error));
     }
   }, 2500);
   return result.label;
@@ -359,7 +359,7 @@ export function rememberVisit(tabId: number, url?: string) {
     if (url) all[tabId] = [...(all[tabId] || []).filter((seen) => seen !== url), url].slice(-8);
     else delete all[tabId];
     await chrome.storage.session.set({ [visitedKey]: all });
-  }).catch(() => {});
+  }).catch(() => { /* best effort: the visited-pages list is only a convenience */ });
 }
 
 // The employer as the page names it replaces a name guessed from the
@@ -412,7 +412,7 @@ export async function postingFromOwnTab(app: Application, filling?: Observation,
         return { url: link, description: page.description };
     }
   } finally {
-    await chrome.tabs.remove(reader.id).catch(() => {});
+    await chrome.tabs.remove(reader.id).catch(() => { /* the reader tab may already be closed */ });
   }
 }
 
@@ -468,7 +468,7 @@ export async function detachTab(app: Application, tabId: number) {
 // unreadable frames noted. Shared by issue reports and fill captures.
 export async function pageEvidence(tabId: number): Promise<{ tab: chrome.tabs.Tab & { url: string }; frames: IssueReport["frames"] }> {
   if (bg.state.settings.networkCapture === "on" && !capturing(tabId))
-    await startCapture(tabId, false).catch(() => {});
+    await startCapture(tabId, false).catch(() => { /* best effort: a report then has no network log */ });
   const captured = await inspectTab(tabId, true);
   const tab = captured.tab;
   if (!tab.url || !/^https?:/.test(tab.url))

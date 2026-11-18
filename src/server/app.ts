@@ -110,7 +110,7 @@ async function pruneAutoRecordings(directory: string) {
       auto.push({ name, createdAt: Number(head.match(/"createdAt":\s*(\d+)/)?.[1] || 0) });
   }
   for (const old of auto.sort((a, b) => b.createdAt - a.createdAt).slice(40))
-    await unlink(join(directory, "recordings", old.name)).catch(() => {});
+    await unlink(join(directory, "recordings", old.name)).catch(() => { /* pruning is best effort: the file may already be gone */ });
 }
 // Fill captures (one per finished fill, see captureFill in background.ts)
 // are evidence for the eval's checks, not reports: only the newest are kept,
@@ -133,8 +133,8 @@ export async function pruneCaptures(directory: string, limits = captureLimits) {
     const seen = (perPage.get(capture.page) || 0) + 1;
     perPage.set(capture.page, seen);
     if (seen <= limits.perPage && ++total <= limits.total) continue;
-    await unlink(join(folder, `${capture.id}.json`)).catch(() => {});
-    await unlink(join(folder, `${capture.id}.har.json`)).catch(() => {});
+    await unlink(join(folder, `${capture.id}.json`)).catch(() => { /* pruning is best effort: the file may already be gone */ });
+    await unlink(join(folder, `${capture.id}.har.json`)).catch(() => { /* pruning is best effort: the file may already be gone */ });
   }
 }
 // What the report fixer (scripts/fixer.ts) is doing, read from the files it
@@ -408,7 +408,7 @@ export async function createApp(
           throw new Error("Profile fact IDs must be unique.");
         let tailoring: string[] = [];
         profileWrite = profileWrite
-          .catch(() => {})
+          .catch(() => { /* an earlier write's failure was already reported to its own request */ })
           .then(async () => {
             await queue.cancelAll();
             tailoring = await importTailoringFiles(bundle.tailoring, directory);
@@ -433,7 +433,7 @@ export async function createApp(
         )
           throw new Error("Profile fact IDs must be unique.");
         profileWrite = profileWrite
-          .catch(() => {})
+          .catch(() => { /* an earlier write's failure was already reported to its own request */ })
           .then(async () => {
             if (profile.revision !== store.data.profile.revision)
               throw new Error(
@@ -643,7 +643,7 @@ export async function createApp(
         // The capture JSON is what readers list: written after its HAR.
         if (har) await atomicJSON(join(directory, "captures", `${capture.id}.har.json`), har);
         await atomicJSON(join(directory, "captures", `${capture.id}.json`), capture);
-        await pruneCaptures(directory).catch(() => {});
+        await pruneCaptures(directory).catch(() => { /* pruning is best effort: the next capture prunes again */ });
         return send(res, 201, { id: capture.id, saved: true });
       }
       if (devTools && path === "/v1/fixer" && req.method === "GET") return send(res, 200, await fixerOverview(directory));
@@ -656,7 +656,7 @@ export async function createApp(
       }
       // Check again: the fixer asks every agent anew before its next task.
       if (devTools && path === "/v1/fixer/health" && req.method === "DELETE") {
-        await unlink(join(directory, "fixer", "health.json")).catch(() => {});
+        await unlink(join(directory, "fixer", "health.json")).catch(() => { /* the file may not exist: nothing to remove */ });
         return send(res, 200, { cleared: true });
       }
       if (devTools && path === "/v1/fixer/settings" && req.method === "PUT") {
@@ -872,7 +872,7 @@ export async function createApp(
         );
         // Every fill records itself; the newest 40 of those are kept, and
         // any a report names.
-        if (recording.auto) await pruneAutoRecordings(directory).catch(() => {});
+        if (recording.auto) await pruneAutoRecordings(directory).catch(() => { /* pruning is best effort: the next recording prunes again */ });
         return send(res, 201, { ...recording, events: undefined });
       }
       if (path === "/v1/recordings" && req.method === "GET") {
@@ -962,10 +962,10 @@ export async function createApp(
           await unlink(issuePath).catch((error) => {
             if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
           });
-          await unlink(join(directory, "issues", `${issueMatch[1]}.har.json`)).catch(() => {});
+          await unlink(join(directory, "issues", `${issueMatch[1]}.har.json`)).catch(() => { /* the file may not exist: nothing to remove */ });
           // And its screenshots.
           for (const name of await readdir(join(directory, "issues")).catch(() => [] as string[]))
-            if (name.startsWith(`${issueMatch[1]}.image-`)) await unlink(join(directory, "issues", name)).catch(() => {});
+            if (name.startsWith(`${issueMatch[1]}.image-`)) await unlink(join(directory, "issues", name)).catch(() => { /* the file may already be gone */ });
           return send(res, 200, { deleted: true });
         }
         if (req.method === "GET") {
@@ -985,7 +985,7 @@ export async function createApp(
         await queue.cancelAll();
         if (withDocuments && config.documentsDir)
           for (const job of store.data.jobs)
-            if (job.exported) await removeWritten(resolve(config.documentsDir), job.exported).catch(() => {});
+            if (job.exported) await removeWritten(resolve(config.documentsDir), job.exported).catch(() => { /* the exported files may already be gone */ });
         // Include orphaned partial documents from interrupted rendering, after
         // generators have settled. The directory and filename shape are bounded.
         for (const name of await readdir(join(directory, "artifacts")))
@@ -996,15 +996,15 @@ export async function createApp(
         for (const folder of ["issues", "recordings", "captures"])
           for (const name of await readdir(join(directory, folder)).catch(() => [] as string[]))
             if (/^[a-f0-9-]{36}(\.har)?\.json$|^[a-f0-9-]{36}\.image-\d+\.(png|jpg|webp|gif)$/.test(name))
-              await unlink(join(directory, folder, name)).catch(() => {});
+              await unlink(join(directory, folder, name)).catch(() => { /* the file may already be gone */ });
         // The fixer's repairs name applications; leak-terms.txt is the
         // applicant's own list of personal details.
         for (const file of ["submissions.json", "queue.json", "inbox.json", "repairs.json", "leak-terms.txt"])
-          await unlink(join(directory, file)).catch(() => {});
+          await unlink(join(directory, file)).catch(() => { /* the file may not exist: nothing to remove */ });
         // Copies of state.json kept before a change of format (store.ts):
         // they hold the profile too.
         for (const name of await readdir(directory).catch(() => [] as string[]))
-          if (/^state\.json\.backup-[\w-]+$/.test(name)) await unlink(join(directory, name)).catch(() => {});
+          if (/^state\.json\.backup-[\w-]+$/.test(name)) await unlink(join(directory, name)).catch(() => { /* the file may already be gone */ });
         // The tailoring folder imported into the data folder (profile.md,
         // preferences, resume sources) is the profile too. One kept anywhere
         // else is the applicant's own folder, and is never touched.
@@ -1016,7 +1016,7 @@ export async function createApp(
         await rm(join(directory, "search"), { recursive: true, force: true });
         for (const name of await readdir(join(directory, "fixer")).catch(() => [] as string[]))
           if (/^[a-f0-9-]{36}\.json$/.test(name) || /^(state|heartbeat|health)\.json$/.test(name))
-            await unlink(join(directory, "fixer", name)).catch(() => {});
+            await unlink(join(directory, "fixer", name)).catch(() => { /* the file may already be gone */ });
         await rm(join(directory, "fixer", "tasks"), { recursive: true, force: true });
         // Transcripts uploaded through the app, by the names it saved them
         // under; other files in that folder are the applicant's own.
@@ -1024,8 +1024,8 @@ export async function createApp(
         const transcripts = transcriptsFolder(config.transcriptsDir, directory);
         for (const name of Array.isArray(uploaded) ? uploaded : [])
           if (typeof name === "string" && name === basename(name) && !name.startsWith("."))
-            await unlink(join(transcripts, name)).catch(() => {});
-        await unlink(join(directory, "transcripts-uploaded.json")).catch(() => {});
+            await unlink(join(transcripts, name)).catch(() => { /* the file may already be gone */ });
+        await unlink(join(directory, "transcripts-uploaded.json")).catch(() => { /* the file may not exist: nothing to remove */ });
         store.data.jobs = [];
         store.data.profile = profileSchema.parse({
           firstName: "",

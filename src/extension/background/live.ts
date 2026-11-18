@@ -56,7 +56,7 @@ export function sendQueue() {
     };
   });
   const snapshot = { at: Date.now(), applications };
-  void api("/v1/queue", "PUT", snapshot).catch(() => {});
+  void api("/v1/queue", "PUT", snapshot).catch(() => { /* best effort: the next change sends the queue again */ });
   sendLive({ type: "queue", snapshot });
 }
 export function sendLive(message: unknown) {
@@ -109,7 +109,7 @@ export async function refreshPast(tabId: number) {
   const frames = (await chrome.webNavigation.getAllFrames({ tabId }).catch(() => undefined)) || [{ frameId: 0, url: "" }];
   for (const frame of frames) {
     if (frame.frameId !== 0 && captchaFrame(frame.url)) continue;
-    await chrome.scripting.executeScript({ target: { tabId, frameIds: [frame.frameId] }, files: ["content.js"], injectImmediately: true }).catch(() => {});
+    await chrome.scripting.executeScript({ target: { tabId, frameIds: [frame.frameId] }, files: ["content.js"], injectImmediately: true }).catch(() => { /* the frame may be gone or not scriptable: skip it */ });
   }
 }
 
@@ -296,7 +296,7 @@ export async function pickUpOnce() {
       opened++;
     }, () => {});
   }
-  if (taken.length) await api("/v1/inbox", "DELETE", { urls: taken }).catch(() => {});
+  if (taken.length) await api("/v1/inbox", "DELETE", { urls: taken }).catch(() => { /* a tab that did not open is not worth stopping the rest for */ });
   bg.state.inboxWaiting = waiting.slice(0, 500);
   await persist();
 }

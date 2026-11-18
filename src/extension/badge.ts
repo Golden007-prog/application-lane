@@ -95,7 +95,7 @@ export function showBadge(given: BadgeInfo | null) {
     root = host.attachShadow({ mode: "closed" });
     root.innerHTML = `<style>${styles}</style><div class="badge" role="button" tabindex="0" aria-label="Application Lane: open the side panel"><span class="mark" aria-hidden="true"></span><span class="text"><span class="title"></span><span class="detail"></span></span><button class="close" type="button" aria-label="Hide on this page">×</button></div>`;
     const badge = root.querySelector<HTMLElement>(".badge")!;
-    const open = () => void chrome.runtime.sendMessage({ type: "OPEN_PANEL" }).catch(() => {});
+    const open = () => void chrome.runtime.sendMessage({ type: "OPEN_PANEL" }).catch(() => { /* the panel may not be listening: nothing to do */ });
     badge.addEventListener("click", (event) => {
       if ((event.target as Element).closest(".close")) return;
       open();

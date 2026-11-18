@@ -144,7 +144,7 @@ export class GenerationQueue {
         this.pump();
       });
       this.tasks.set(task.job.id, completion);
-      void completion.catch(() => {});
+      void completion.catch(() => { /* the failure is reported by the job itself: this only stops an unhandled rejection */ });
     }
   }
   // The posting the applicant gave for this application, if any: pasted
@@ -226,6 +226,21 @@ export class GenerationQueue {
       signal.throwIfAborted();
       // The first attempt's reasons stand.
     }
+  }
+  // The answers the check rejected, drafted once more with its reasons, and
+  // added to those that stood; the warnings say what is still left.
+  private async retryRejected(
+    request: GenerationRequest,
+    profile: Profile,
+    written: WrittenAnswers,
+    answers: Narrative["answers"],
+    warnings: string[],
+    signal: AbortSignal,
+  ) {
+    const retried = await this.secondAttempt(request, profile, this.rejectedAnswers(request, written, answers, warnings), signal);
+    return retried
+      ? { answers: [...answers, ...retried.answers], warnings: [...this.withoutRetried(warnings, retried.fields), ...retried.warnings] }
+      : { answers, warnings };
   }
   // Warnings without the first attempt's "Left …" lines for the questions
   // tried again; the second attempt's own lines say what is still left.
@@ -687,12 +702,10 @@ export class GenerationQueue {
             progress.finish(...freshItems);
             progress.begin(...freshItems);
             const checked = await this.checkDrafts(request, profile, { written }, controller.signal);
-            let drafted = checked.written?.answers || [];
-            const noted = [...written.warnings, ...checked.warnings];
-            const retried = await this.secondAttempt(request, profile, this.rejectedAnswers(request, written, drafted, noted), controller.signal);
+            const { answers: drafted, warnings: said } = await this.retryRejected(
+              request, profile, written, checked.written?.answers || [], [...written.warnings, ...checked.warnings], controller.signal,
+            );
             progress.finish(...freshItems);
-            if (retried) drafted = [...drafted, ...retried.answers];
-            const said = retried ? [...this.withoutRetried(noted, retried.fields), ...retried.warnings] : noted;
             warnings.push(...said);
             answers.push(...drafted);
             job.answered = [...(job.answered || []), ...(answeredRecord(request.fields, drafted, said) || [])];
@@ -759,13 +772,9 @@ export class GenerationQueue {
               try {
                 progress!.begin(...questionIds);
                 const first = await this.checkDrafts(request, profile, { written: result }, controller.signal);
-                let kept = first.written?.answers || [];
-                let warnings = [...result.warnings, ...first.warnings];
-                const retried = await this.secondAttempt(request, profile, this.rejectedAnswers(request, result, kept, warnings), controller.signal);
-                if (retried) {
-                  kept = [...kept, ...retried.answers];
-                  warnings = [...this.withoutRetried(warnings, retried.fields), ...retried.warnings];
-                }
+                const { answers: kept, warnings } = await this.retryRejected(
+                  request, profile, result, first.written?.answers || [], [...result.warnings, ...first.warnings], controller.signal,
+                );
                 early = { written: result, answers: kept, warnings: warnings.map((warning) => warning.slice(0, 350)) };
                 job.earlyAnswers = { answers: kept, warnings: early.warnings };
                 progress!.finish(...questionIds);
@@ -888,13 +897,8 @@ export class GenerationQueue {
           warnings: [...(narrative.warnings || []), ...alreadyChecked.warnings],
         };
       else if (written && !(written instanceof Error)) {
-        const retried = await this.secondAttempt(request, profile, this.rejectedAnswers(request, written, narrative.answers, narrative.warnings || []), controller.signal);
-        if (retried)
-          narrative = {
-            ...narrative,
-            answers: [...narrative.answers, ...retried.answers],
-            warnings: [...this.withoutRetried(narrative.warnings || [], retried.fields), ...retried.warnings],
-          };
+        const { answers, warnings } = await this.retryRejected(request, profile, written, narrative.answers, narrative.warnings || [], controller.signal);
+        narrative = { ...narrative, answers, warnings };
       }
       job.answered = answeredRecord(request.fields, narrative.answers, narrative.warnings || []);
       progress.finish(...(tailorDir ? ["resume"] : []), "letter", ...questionIds);

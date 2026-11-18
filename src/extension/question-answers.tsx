@@ -160,7 +160,7 @@ export function QuestionAnswers({
       } catch (error) {
         // A dynamic page can change between the panel scan and the protected
         // scan before drafting. Refresh the count before showing the refusal.
-        await scan().catch(() => {});
+        await scan().catch(() => { /* the refusal is shown anyway: a stale count is no harm */ });
         throw error;
       }
     });

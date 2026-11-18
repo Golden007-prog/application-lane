@@ -8,7 +8,7 @@ import { bg } from "./background/state";
 import { badgeSent, badgesSoon } from "./background/badges";
 import { alive, dirty, initial, persist, readingOptions } from "./background/core";
 import { applicationForTab, rememberVisit, sameFormPage, tabContext, updateRelatedTab } from "./background/tabs";
-import { pump, resume, schedule, trackTab } from "./background/queue";
+import { carryOnFailed, pump, resume, schedule, trackTab } from "./background/queue";
 import { sweepTrustedInput, uiMessage } from "./background/ui";
 import { attachRecorder, maxRecordedEvents, recordings, stopRecording } from "./background/evidence";
 import { interactedNote, noteProgress, siteSubmitted, submittedNote } from "./background/submissions";
@@ -40,7 +40,7 @@ chrome.commands.onCommand.addListener((command, tab) => {
       if (!app) return;
       await uiMessage({ type: "FILL_STEP", id: app.id, tabId });
     } catch (error) {
-      await chrome.tabs.sendMessage(tabId, { type: "LANE_BADGE", info: { tone: "attention", title: "Could not fill", detail: (error as Error).message.slice(0, 140) } }, { frameId: 0 }).catch(() => {});
+      await chrome.tabs.sendMessage(tabId, { type: "LANE_BADGE", info: { tone: "attention", title: "Could not fill", detail: (error as Error).message.slice(0, 140) } }, { frameId: 0 }).catch(() => { /* the tab may be gone: nobody left to tell */ });
       badgeSent.delete(tabId);
     }
   });
@@ -55,7 +55,7 @@ chrome.webNavigation.onCompleted.addListener(({ tabId, frameId }) => {
   void initial.then(() => {
     const app = bg.state.applications.find((a) => a.tabId === tabId && a.status !== "cancelled");
     if (!app || app.confirmedBySite || !["applying", "review"].includes(app.workflowStage)) return;
-    void chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ["content.js"] }).catch(() => {});
+    void chrome.scripting.executeScript({ target: { tabId, frameIds: [frameId] }, files: ["content.js"] }).catch(() => { /* the tab may be gone or not scriptable: nothing to inject */ });
   });
 });
 
@@ -82,7 +82,7 @@ chrome.webNavigation.onBeforeNavigate.addListener(({ tabId, frameId, url }) => {
   void initial.then(() => {
     if (bg.state.settings.networkCapture === "on" && !capturing(tabId) && applicationForTab(tabId))
       return startCapture(tabId, false);
-  }).catch(() => {});
+  }).catch(() => { /* best effort: a report then has no network log */ });
 });
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   if (change.url && /^https:/.test(change.url) && change.url.length <= 3000) rememberVisit(tabId, change.url);
@@ -339,7 +339,7 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   forgetTrustedInput(tabId);
   forgetCapture(tabId);
   // A closed tab ends its recording; keep what was captured.
-  if (recordings.has(tabId)) void stopRecording(tabId).catch(() => {});
+  if (recordings.has(tabId)) void stopRecording(tabId).catch(() => { /* best effort: a recording that cannot stop is simply left as it was */ });
   void initial.then(async () => {
     for (const app of bg.state.applications)
       if (app.tabs.some((tab) => tab.tabId === tabId)) {
@@ -376,7 +376,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
     if (app.company === companyFor(app.sourceUrl || app.url, "")) app.company = companyFor(app.sourceUrl || app.url, title);
     app.updatedAt = Date.now();
     await persist();
-  }).catch(() => {});
+  }).catch(() => { /* the tab may be gone: the title is only a convenience */ });
 });
 chrome.tabs.onUpdated.addListener((tabId, change) => {
   // A same-URL reload has no change.url, so the URL-change path below cannot
@@ -394,7 +394,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
           "paused",
           "The page reloaded. Review its current fields again before filling.",
         );
-    }).catch(() => {});
+    }).catch(() => { /* best effort: the next page event handles it */ });
   // An application tab's traffic, for reports and fill captures. "loading"
   // comes after the page's own request has gone out, so the capture only
   // counts as holding the page once it sees that request (network-capture.ts);
@@ -403,7 +403,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
     void initial.then(() => {
       if (bg.state.settings.networkCapture === "on" && !capturing(tabId) && applicationForTab(tabId))
         return startCapture(tabId, false);
-    }).catch(() => {});
+    }).catch(() => { /* best effort: a report then has no network log */ });
   const recording = recordings.get(tabId);
   if (recording && change.status === "complete")
     void chrome.tabs.get(tabId).then(async (tab) => {
@@ -415,7 +415,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
       });
       if (recording.pages.at(-1) !== url) recording.pages.push(url);
       await attachRecorder(recording);
-    }).catch(() => {});
+    }).catch(() => { /* the tab may be gone: nothing to record */ });
   if (!change.url && change.status !== "complete") return;
   void initial
     .then(async () => {
@@ -434,7 +434,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
       // The page a site shows after Submit is a new document with no page
       // script in it. Put one there so it can say whether that is what this is.
       if (change.status === "complete" && !app.confirmedBySite && ["applying", "review"].includes(app.workflowStage))
-        void chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content.js"] }).catch(() => {});
+        void chrome.scripting.executeScript({ target: { tabId, frameIds: [0] }, files: ["content.js"] }).catch(() => { /* the tab may be gone or not scriptable: nothing to inject */ });
       // A form in a frame of the page goes to its confirmation in that frame
       // alone: the frame listener above (webNavigation) puts a page script there.
       // The posting's Apply led here: the same request goes on with the form.
@@ -448,7 +448,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
         if (change.status === "complete") {
           applied.operation = -1;
           setTimeout(() => {
-            if (app.tabId === tabId && app.status === "awaiting-user") void resume(app).catch(() => {});
+            if (app.tabId === tabId && app.status === "awaiting-user") void resume(app).catch((error) => carryOnFailed(app, error));
           }, 1500);
         }
       } else if (change.url && app.continueAfterSiteFill && sameFormPage(change.url, app.url)) {
@@ -474,7 +474,7 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
           await persist();
         }
       }
-      if (change.status === "complete") await tabContext(tabId).catch(() => {});
+      if (change.status === "complete") await tabContext(tabId).catch(() => { /* the tab may be gone: no context to read */ });
       // The site finished rewriting the form from the uploaded resume: this
       // is still the same requested fill, so it carries on by itself.
       if (
@@ -487,13 +487,13 @@ chrome.tabs.onUpdated.addListener((tabId, change) => {
         await persist();
         setTimeout(() => {
           if (app.tabId === tabId && app.operation === request && app.continueAfterSiteFill && app.status === "awaiting-user")
-            void resume(app, { operation: request, tabId }).catch(() => {});
+            void resume(app, { operation: request, tabId }).catch((error) => carryOnFailed(app, error));
         }, 2000);
       }
     })
-    .catch(() => {});
+    .catch(() => { /* best effort: the next page event tries again */ });
 });
 chrome.tabs.onActivated.addListener(({ tabId }) => {
-  void initial.then(() => tabContext(tabId)).catch(() => {});
+  void initial.then(() => tabContext(tabId)).catch(() => { /* the tab may be gone: no context to read */ });
 });
 void initial.then(() => schedule());

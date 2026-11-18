@@ -280,7 +280,7 @@ export async function uiMessage(message: any) {
     app.stageUpdatedAt = Date.now();
     touch(app, "awaiting-user", "Started over. When the page has loaded, choose Fill this step.");
     await persist();
-    if (app.tabId) await chrome.tabs.reload(app.tabId).catch(() => {});
+    if (app.tabId) await chrome.tabs.reload(app.tabId).catch(() => { /* the tab may already be closed: nothing to reload */ });
     return bg.state;
   }
   if (message.type === "FILL_STEP") {
@@ -303,13 +303,13 @@ export async function uiMessage(message: any) {
       // The page was loaded before its tab joined an application: the
       // capture starts now, and the report says it missed the load.
       if (bg.state.settings.networkCapture === "on" && !capturing(app.tabId))
-        await startCapture(app.tabId, false).catch(() => {});
+        await startCapture(app.tabId, false).catch(() => { /* best effort: a report then has no network log */ });
       // Every fill records itself, so a report has what happened.
-      if (!recordings.has(app.tabId)) await startRecording(app.tabId, true).catch(() => {});
+      if (!recordings.has(app.tabId)) await startRecording(app.tabId, true).catch(() => { /* best effort: a report then has no recording */ });
     }
     answerRequests.delete(app.id);
     if (app.answerSession)
-      await api(`/v1/jobs/${app.answerSession.jobId}`, "DELETE").catch(() => {});
+      await api(`/v1/jobs/${app.answerSession.jobId}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
     await resume(app);
     return bg.state;
   }

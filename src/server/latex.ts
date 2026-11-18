@@ -141,6 +141,6 @@ export async function latexResume(
       source: chosen,
     };
   } finally {
-    await rm(out, { recursive: true, force: true }).catch(() => {});
+    await rm(out, { recursive: true, force: true }).catch(() => { /* cleanup of a temporary folder: the system clears it later */ });
   }
 }

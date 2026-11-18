@@ -171,7 +171,7 @@ export class Store {
     // only to a folder it creates. Windows does not use these modes.
     if (process.platform !== "win32")
       for (const folder of [this.directory, ...["artifacts", "issues", "recordings"].map((name) => join(this.directory, name))])
-        await chmod(folder, 0o700).catch(() => {});
+        await chmod(folder, 0o700).catch(() => { /* best effort: the folder keeps its modes if refused */ });
     const path = join(this.directory, "state.json");
     // The applicant's profile and history: never overwritten unread. A file
     // that cannot be read, or that a newer build wrote, stops the backend
@@ -239,7 +239,7 @@ export class Store {
   save() {
     const snapshot = { schemaVersion: STATE_VERSION, ...structuredClone(this.data) };
     this.pending = this.pending
-      .catch(() => {})
+      .catch(() => { /* an earlier save's failure was already reported to its own caller */ })
       .then(() => atomicJSON(join(this.directory, "state.json"), snapshot));
     return this.pending;
   }

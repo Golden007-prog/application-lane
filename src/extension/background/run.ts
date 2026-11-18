@@ -9,7 +9,7 @@ import { pickTranscript } from "../../shared/transcripts";
 import { storeBuild } from "../../shared/store-build";
 import { trustedTypingAvailable, releaseTrustedInput } from "../trusted-input";
 import { rowHolds } from "../row-holds";
-import { clearFit, fillable, forApplication, operationKey, resume, schedule, touch } from "./queue";
+import { carryOnFailed, clearFit, fillable, forApplication, operationKey, resume, schedule, touch } from "./queue";
 import { type Frame, alive, answerRequests, api, applyFrame, configUploads, dirty, emptyFields, fieldFallbackRequests, frameCall, frameDeadline, loadingSince, pageTimers, persist, reinspectNavigation, reviewInterruptedWrite, signingPolicies } from "./core";
 import { guessedAgain, inspectTab, leadingPage, namedByPage, observations, postingFromOwnTab, useApply, wordCount } from "./tabs";
 import { interactedNote } from "./submissions";
@@ -349,7 +349,7 @@ export async function run(app: Application, operation: number) {
           .slice(0, 10),
       });
       if (!alive(app, operation)) {
-        await api(`/v1/jobs/${job.id}`, "DELETE").catch(() => {});
+        await api(`/v1/jobs/${job.id}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
         return false;
       }
       app.jobId = job.id;
@@ -472,7 +472,7 @@ export async function run(app: Application, operation: number) {
       app.generationKey = key;
   }
   if (app.generationKey && app.generationKey !== key && app.jobId) {
-    await api(`/v1/jobs/${app.jobId}`, "DELETE").catch(() => {});
+    await api(`/v1/jobs/${app.jobId}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
     app.operation++;
     app.jobId = undefined;
     app.artifacts = [];
@@ -1029,7 +1029,7 @@ export async function run(app: Application, operation: number) {
       if (!app.continueAfterSiteFill || app.operation !== request || app.tabId !== tabId || app.status !== "awaiting-user") return;
       app.note = "The site filled the form from your resume. Correcting and completing it…";
       await persist();
-      await resume(app, { operation: request, tabId }).catch(() => {});
+      await resume(app, { operation: request, tabId }).catch((error) => carryOnFailed(app, error));
     })();
   }
 }
@@ -1310,10 +1310,10 @@ export async function invalidate(
   note: string,
 ) {
   answerRequests.delete(app.id);
-  if (app.answerSession) void api(`/v1/jobs/${app.answerSession.jobId}`, "DELETE").catch(() => {});
+  if (app.answerSession) void api(`/v1/jobs/${app.answerSession.jobId}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
   fieldFallbackRequests.delete(app.id);
   if (app.fieldFallbackSession?.jobId)
-    void api(`/v1/jobs/${app.fieldFallbackSession.jobId}`, "DELETE").catch(() => {});
+    void api(`/v1/jobs/${app.fieldFallbackSession.jobId}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
   app.fieldFallbackSession = undefined;
   app.operation++;
   app.explicitFill = false;
@@ -1330,7 +1330,7 @@ export async function invalidate(
   if (app.tabId !== undefined) await releaseTrustedInput(app.tabId);
   await persist();
   await broadcast(app, "PAUSE");
-  if (app.jobId) await api(`/v1/jobs/${app.jobId}`, "DELETE").catch(() => {});
+  if (app.jobId) await api(`/v1/jobs/${app.jobId}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
   app.jobId = undefined;
   app.generationKey = undefined;
   await persist();

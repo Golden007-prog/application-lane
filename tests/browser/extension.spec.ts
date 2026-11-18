@@ -336,11 +336,11 @@ const showDashboard = (page: "profile" | "jobs" | "submitted" | "fixer" | "issue
 const showPanel = () => panel.goto(`chrome-extension://${extensionId}/panel.html`);
 test.afterEach(async () => {
   await context?.close();
-  if (profileDir) await rememberChromiumProfile(profileDir).catch(() => {});
+  if (profileDir) await rememberChromiumProfile(profileDir).catch(() => { /* cleanup after the test: a failure here must not hide the test result */ });
   if (backend) await new Promise<void>((r) => backend.close(() => r()));
   if (fixture) await new Promise<void>((r) => fixture.close(() => r()));
   for (const directory of scratchDirs.splice(0))
-    await rm(directory, { recursive: true, force: true }).catch(() => {});
+    await rm(directory, { recursive: true, force: true }).catch(() => { /* cleanup after the test: a failure here must not hide the test result */ });
 });
 
 test("packaged v2 fills an embedded config through the authorized MAIN-world bridge", async () => {
@@ -13809,7 +13809,7 @@ test("a hidden page's own timers keep their delays while a fill runs", async () 
       void cdp.send("Runtime.evaluate", {
         contextId: created.id,
         expression: `Object.defineProperty(Document.prototype, "visibilityState", { get: () => "hidden" }); Object.defineProperty(Document.prototype, "hidden", { get: () => true });`,
-      }).catch(() => {});
+      }).catch(() => { /* the page may close first: the script is only a convenience */ });
   });
   await cdp.send("Runtime.enable");
   await page.goto(`${sapsfOrigin}/portalcareer?company=fixture&career_job_req_id=42826`);

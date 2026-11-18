@@ -17,7 +17,7 @@ export async function clearFieldFallback(app: Application) {
   fieldFallbackRequests.delete(app.id);
   const id = app.fieldFallbackSession?.jobId;
   app.fieldFallbackSession = undefined;
-  if (id) await api(`/v1/jobs/${id}`, "DELETE").catch(() => {});
+  if (id) await api(`/v1/jobs/${id}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
 }
 // A field of one row of a repeated section (a school, a job) carries what
 // the rest of its row holds, for the model to tell which entry it is.
@@ -216,7 +216,7 @@ export async function draftFieldFallback(
     app.operation !== operation ||
     fieldFallbackRequests.get(app.id) !== stamp
   ) {
-    await api(`/v1/jobs/${job.id}`, "DELETE").catch(() => {});
+    await api(`/v1/jobs/${job.id}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
     throw new Error("The page changed while preparing the review. Scan again.");
   }
   app.fieldFallbackSession = {
@@ -572,7 +572,10 @@ export async function assist(app: Application, tabId: number) {
       if (filled && idle()) app.note = `${filled} more field${filled === 1 ? "" : "s"} filled by AI from your saved details. Check the ones listed.`;
     } else if (idle()) {
       const questions = (await questionFields(tabId)).fields.filter((field) => !field.value && !field.protected && !leftAsLegal(field.label));
-      if (questions.length) await draftAnswers(app, tabId, questions.map((field) => field.id).slice(0, 250)).catch(() => {});
+      if (questions.length) await draftAnswers(app, tabId, questions.map((field) => field.id).slice(0, 250)).catch((error: Error) => {
+          // Said on the card: the drafts were what this step was waiting for.
+          if (idle()) app.note = `AI could not draft the written questions (${error.message.slice(0, 160)}). Draft them from the panel.`;
+        });
     }
     finished = idle();
   } catch (error) {

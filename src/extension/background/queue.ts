@@ -74,7 +74,7 @@ export function operationKey(frames: Frame[], profileRevision: number) {
 export async function pump() {
   await initial;
   // A history the backend missed (it was down when an application went in).
-  if (!bg.submissionsSynced) void syncSubmissions().catch(() => {});
+  if (!bg.submissionsSynced) void syncSubmissions().catch(() => { /* best effort: the history syncs again on the next pump */ });
   if (bg.pumping) return;
   bg.pumping = true;
   try {
@@ -139,7 +139,7 @@ export async function pump() {
                   await persist();
                 }
               })
-              .catch(() => {});
+              .catch(() => { /* best effort: the next pump tries again */ });
           if (app.tabId !== undefined && !activeStatuses.includes(app.status) && app.status !== "queued")
             scheduleFillCapture(app);
           // Release the input claim; passive report capture keeps its own.
@@ -183,7 +183,7 @@ export async function clearFit(app: Application) {
   app.fitJobId = undefined;
   app.fit = undefined;
   app.fitError = undefined;
-  if (id) await api(`/v1/jobs/${id}`, "DELETE").catch(() => {});
+  if (id) await api(`/v1/jobs/${id}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
 }
 // The profile as one application should be answered from: with the job's
 // country (from the posting's location) and employer, so authorization,
@@ -197,6 +197,14 @@ export function forApplication(profile: Profile, app: Application): Profile {
   // homepageCareers…" while its tab said "Internship, Software Engineer…".
   const named = [app.posting?.title, app.title, ...app.tabs.map((tab) => tab.title)].filter(Boolean).join(" | ");
   return { ...forRole(profile, named), applyingTo: { ...(country ? { country } : {}), ...(app.company ? { company: app.company } : {}), ...(title ? { title } : {}) } };
+}
+// An automatic carry-on (after the site filled the form from the resume, or
+// after the posting's Apply button) that could not start: said on the card,
+// which otherwise kept "Correcting and completing it…" for good.
+export async function carryOnFailed(app: Application, error: unknown) {
+  if (app.status !== "awaiting-user") return;
+  app.note = `Could not carry on with this step automatically (${String((error as Error)?.message || error).slice(0, 160)}). Choose Fill this step.`;
+  await persist();
 }
 export async function resume(app: Application, continuation?: { operation: number; tabId: number }) {
   if (await draftOnlyTab(app.tabId, app.url)) throw new Error(DRAFT_ONLY_NOTE);

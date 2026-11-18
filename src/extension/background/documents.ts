@@ -34,7 +34,7 @@ export async function checkFit(app: Application) {
     pageUrls: [...new Set([app.url, ...app.tabs.map((tab) => tab.url)])].slice(0, 10),
   });
   if (details() !== original) {
-    await api(`/v1/jobs/${job.id}`, "DELETE").catch(() => {});
+    await api(`/v1/jobs/${job.id}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
     return bg.state;
   }
   app.fit = undefined;
@@ -128,5 +128,5 @@ export async function clearAnswerDrafts(app: Application) {
   answerRequests.delete(app.id);
   const id = app.answerSession?.jobId;
   app.answerSession = undefined;
-  if (id) await api(`/v1/jobs/${id}`, "DELETE").catch(() => {});
+  if (id) await api(`/v1/jobs/${id}`, "DELETE").catch(() => { /* the backend job is only cleanup: it expires on its own */ });
 }

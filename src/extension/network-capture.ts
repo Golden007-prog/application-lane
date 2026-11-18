@@ -254,7 +254,7 @@ chrome.debugger?.onEvent.addListener((rawSource, method, rawParams) => {
     void send(child, "Network.enable", { maxTotalBufferSize: 50_000_000, maxResourceBufferSize: 10_000_000 })
       .then(() => send(child, "Page.enable"))
       .then(() => send(child, "Target.setAutoAttach", { autoAttach: true, waitForDebuggerOnStart: false, flatten: true }))
-      .catch(() => {});
+      .catch(() => { /* best effort: a child target that cannot be traced is left out of the capture */ });
     return;
   }
   if (method === "Network.requestWillBeSent") {

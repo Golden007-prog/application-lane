@@ -33,7 +33,7 @@ export function scheduleFillCapture(app: Application, delayMs = 4000, tries = 0)
     }
     if (capturesInFlight.has(tabId)) return;
     capturesInFlight.add(tabId);
-    void captureFill(app, tabId).catch(() => {}).finally(() => capturesInFlight.delete(tabId));
+    void captureFill(app, tabId).catch(() => { /* evidence is best effort: a failed capture must not stop the fill */ }).finally(() => capturesInFlight.delete(tabId));
   }, delayMs));
 }
 export async function captureFill(app: Application, tabId: number, trigger: "fill" | "check" = "fill"): Promise<string | undefined> {
@@ -193,8 +193,8 @@ export const maxRecordedEvents = 30_000;
 
 export async function startEvidence(tabId: number) {
   if (bg.state.settings.networkCapture === "on" && !capturing(tabId))
-    await startCapture(tabId, false).catch(() => {});
-  if (!recordings.has(tabId)) await startRecording(tabId, true).catch(() => {});
+    await startCapture(tabId, false).catch(() => { /* best effort: a report then has no network log */ });
+  if (!recordings.has(tabId)) await startRecording(tabId, true).catch(() => { /* best effort: a report then has no recording */ });
 }
 
 // Starts (or re-starts after a reload) the recorder in every frame we may
@@ -252,7 +252,7 @@ export async function attachRecorder(recording: ActiveRecording) {
           args: [recording.id, chrome.runtime.id],
         }),
       )
-      .catch(() => {});
+      .catch(() => { /* the tab may be gone or not scriptable: nothing to attach to */ });
     await Promise.race([attached, stalled]);
     clearTimeout(slow);
   }));
@@ -292,7 +292,7 @@ export function saveRecording(tabId: number, stop = false) {
   if (!recording) throw new Error("This tab is not recording.");
   // A fill checkpoint and a report may arrive together. Never let an older
   // save finish after the newer snapshot and erase its events.
-  const task = (recording.saving || Promise.resolve()).catch(() => {}).then(() => writeRecording(recording, stop));
+  const task = (recording.saving || Promise.resolve()).catch(() => { /* an earlier save's failure was already reported to its own caller */ }).then(() => writeRecording(recording, stop));
   recording.saving = task;
   return task;
 }
@@ -305,7 +305,7 @@ export async function writeRecording(recording: ActiveRecording, stop: boolean) 
       world: "MAIN",
       func: removeMonitor,
     })
-    .catch(() => {});
+    .catch(() => { /* the tab may be gone: nothing left to remove */ });
   for (const frame of await allFrames(tabId).catch(() => [])) {
     const result = await chrome.tabs
       .sendMessage(tabId, { type: stop ? "RECORD_STOP" : "RECORD_CHECKPOINT" }, { frameId: frame.frameId })

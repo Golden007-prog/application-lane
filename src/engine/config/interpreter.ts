@@ -3505,11 +3505,3 @@ async function applyChoice(
   }
 }
 
-export function valuesForRepeatedSection(
-  key: string,
-  profile: Profile,
-  collection: ValueContext["collection"],
-  index: number,
-) {
-  return canonicalValues(key, profile, { collection, index });
-}

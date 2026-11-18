@@ -28,7 +28,7 @@ export const readableText = (root: Element | null) => {
 
 export const tell = (message: unknown) => {
   try {
-    void chrome.runtime.sendMessage(message).catch(() => {});
+    void chrome.runtime.sendMessage(message).catch(() => { /* the background worker may be asleep or gone: nobody to tell */ });
   } catch {
     /* Extension may have been reloaded. */
   }

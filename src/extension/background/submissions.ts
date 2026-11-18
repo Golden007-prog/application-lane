@@ -67,7 +67,7 @@ export async function setStage(app: Application, stage: Application["workflowSta
   if (stage === "submitted")
     await api("/v1/submissions", "POST", { entries: [submissionRecord(app)] }).catch(() => { bg.submissionsSynced = false; });
   else if (was === "submitted")
-    await api(`/v1/submissions/${app.id}`, "DELETE").catch(() => {});
+    await api(`/v1/submissions/${app.id}`, "DELETE").catch(() => { /* the job or submission is already gone: nothing to remove */ });
   // The documents' folder moves under Sent, and back if this is reopened.
   const documentJob = app.documentJobId || app.jobId;
   if (documentJob && app.artifacts.length)
@@ -75,7 +75,7 @@ export async function setStage(app: Application, stage: Application["workflowSta
       sent: stage === "submitted",
       company: app.company,
       title: app.title,
-    }).catch(() => {});
+    }).catch(() => { /* best effort: the history syncs again on the next pump */ });
   await persist();
 }
 // The site drew its own "application submitted" page or banner in this

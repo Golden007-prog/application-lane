@@ -253,7 +253,7 @@ export async function cliComplete(
     if (used.length) throw new CliFailure("response", `Codex used a tool it should not have (${used.join(", ")}), so its answer was not used`);
     return await readFile(answer, "utf8");
   } finally {
-    await rm(directory, { recursive: true, force: true }).catch(() => {});
-    if (promptFolder) await rm(promptFolder, { recursive: true, force: true }).catch(() => {});
+    await rm(directory, { recursive: true, force: true }).catch(() => { /* cleanup of a temporary folder: the system clears it later */ });
+    if (promptFolder) await rm(promptFolder, { recursive: true, force: true }).catch(() => { /* cleanup of a temporary folder: the system clears it later */ });
   }
 }

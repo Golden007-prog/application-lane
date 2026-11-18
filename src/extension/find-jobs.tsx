@@ -88,7 +88,7 @@ export function FindJobs({ onState }: { onState: (state: QueueState) => void }) 
         setCompanies(loaded.settings.companies.join("\n"));
       })
       .catch((failure) => setError((failure as Error).message));
-    void api<Result | null>("/v1/search").then(setResult).catch(() => {});
+    void api<Result | null>("/v1/search").then(setResult).catch(() => { /* no earlier search is simply shown as none */ });
   }, []);
   if (!settings) return <section className="card">{error ? <p className="error">{error}</p> : <p className="help">Loading…</p>}</section>;
   const current = (): Settings => ({ ...settings, roles: lines(roles), locations: lines(places), companies: lines(companies) });
