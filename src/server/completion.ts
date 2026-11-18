@@ -6,6 +6,7 @@ import { cliDefaults, CliFailure, cliComplete } from "./cli-provider";
 import { setTimeout as delay } from "node:timers/promises";
 import { AsyncLocalStorage } from "node:async_hooks";
 import { closeTruncatedJson, record } from "./draft-checks";
+import { withinTime } from "./deadline";
 
 
 export type Generate = (
@@ -231,7 +232,7 @@ export async function completeJSON(
       exchange.model = model;
       exchange.status = undefined;
       exchange.finishReason = undefined;
-      const providerBudget = AbortSignal.any([budget, AbortSignal.timeout(providerLimit(step))]);
+      const providerBudget = withinTime(providerLimit(step), budget);
       const parsed = provider === "http"
         ? await completeHTTP(
             { ...config, provider: "http", model },

@@ -42,14 +42,16 @@ test("legal questions are told apart by the saved detail they ask about", () => 
   assert.deepEqual(legalTopics("Have you ever filed for bankruptcy?"), []);
 });
 
-test("an AI legal answer must cite the saved detail its question asks about", async () => {
-  // A saved clearance does not answer a question about a conviction.
+test("an AI legal answer that does not cite the saved detail its question asks about is filled with a caution", async () => {
+  // A saved clearance does not answer a question about a conviction: the
+  // answer is kept (nothing holds the form back), with a caution to check it.
   const wrong = await suggest("Have you ever been convicted of a felony?", { clearance: "No security clearance, and never held one" }, ["legal.clearance"]);
-  assert.equal(wrong.value, "");
-  assert.match(wrong.skipReason || "", /legal and eligibility details do not answer this/);
-  // "Anything else" may answer it.
+  assert.equal(wrong.value, "No");
+  assert.match(wrong.caution || "", /legal and eligibility details do not cover this answer/);
+  // "Anything else" answers it: no caution.
   const other = await suggest("Have you ever been convicted of a felony?", { other: "No convictions of any kind" }, ["legal.other"]);
   assert.equal(other.value, "No");
+  assert.equal(other.caution, undefined);
   // A legal question about none of the saved topics may stand on any of them.
   const unnamed = await suggest("Have you ever filed for bankruptcy?", { other: "Never filed for bankruptcy" }, ["legal.other"]);
   assert.equal(unnamed.value, "No");

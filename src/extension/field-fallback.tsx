@@ -279,9 +279,8 @@ export function FieldFallback({
       </div>
       {autoFill && session ? (
         <p>
-          AI drafted these answers about eligibility, identity or pay, and
-          left them for you: a wrong one misstates you on the form. Check each
-          against its source, then fill the ones that are right.
+          AI drafted these answers. Check each against its source, then fill
+          the ones that are right.
         </p>
       ) : autoFill && !askAgain && !session ? (
         <p>
@@ -504,6 +503,7 @@ export function FieldFallback({
               )}
               {!defaultReason.test(draft.reason) && <p className="answer-source">{draft.reason}</p>}
               {draft.source && <Source text={draft.source} />}
+              {draft.caution && <p className="answer-source">{draft.caution}</p>}
               {status(draft)}
             </div>
           );

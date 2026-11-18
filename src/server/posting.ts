@@ -16,6 +16,7 @@ export type Posting = {
 };
 
 import { fetchPublic, publicURL, type Lookup } from "./public-url";
+import { withinTime } from "./deadline";
 type Fetch = (url: string, init?: RequestInit) => Promise<Response>;
 
 const entities: Record<string, string> = {
@@ -287,10 +288,7 @@ export async function fetchPosting(
         const response = await fetcher(endpoint.api, {
           headers: { Accept: "application/json" },
           redirect: "error",
-          signal: AbortSignal.any([
-            ...(options.signal ? [options.signal] : []),
-            AbortSignal.timeout(15_000),
-          ]),
+          signal: withinTime(15_000, options.signal),
         });
         if (!response.ok) break;
         const posting = endpoint.read(await response.json());
@@ -398,7 +396,7 @@ export async function fetchPostingPage(
 ): Promise<Posting | undefined> {
   const fetched = await fetchPublic(raw, {
     headers: { Accept: "text/html,application/xhtml+xml" },
-    signal: AbortSignal.any([...(options.signal ? [options.signal] : []), AbortSignal.timeout(15_000)]),
+    signal: withinTime(15_000, options.signal),
   }, { fetch: options.fetch as typeof fetch | undefined, lookup: options.lookup, protocols: ["https:"], hops: 3 }).catch(() => undefined);
   if (fetched) {
     const { response } = fetched;

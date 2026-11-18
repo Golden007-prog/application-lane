@@ -135,17 +135,6 @@ export function legalTopics(label: string): LegalDetailKey[] {
   return legalTopicPatterns.filter(([, pattern]) => pattern.test(text)).map(([key]) => key);
 }
 
-// Questions whose AI suggestion waits for the applicant even when AI filling
-// is automatic: who they are (equal-opportunity questions), whether they may
-// work here, and what they will be paid. A wrong guess there misstates their
-// identity or eligibility on the form. (Legal questions have their own
-// setting, Settings → Legal and eligibility questions, and legalQuestion.)
-const reviewFirstPattern =
-  /\b(gender|sex|sexual orientation|transgender|pronouns?|race|racial|ethnic\w*|hispanic|latin[oax]|disabilit\w*|veterans?|military|citizen\w*|authori[sz]\w*|sponsor\w*|visas?|immigration|eligib\w*|right to work|work permit|salary|compensation|wages?|pay|pay rate|hourly rate)\b/;
-export function reviewFirstQuestion(label: string): boolean {
-  return reviewFirstPattern.test(normalize(label));
-}
-
 export function wordCount(text: string): number {
   return text.trim() ? text.trim().split(/\s+/u).length : 0;
 }

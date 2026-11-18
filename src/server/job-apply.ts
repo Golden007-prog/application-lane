@@ -17,6 +17,7 @@ import { letterBody, letterDate } from "./documents";
 import { chooseVariant } from "./latex";
 import type { Config } from "./store";
 import { packageRoot } from "./paths";
+import { withinTime } from "./deadline";
 
 // The tailoring engine in tailor/ reorders the applicant's own LaTeX resume
 // and rewrites one summary line, and checks every name a brief uses against
@@ -109,7 +110,7 @@ export async function bridge<T>(
   signal?: AbortSignal,
 ): Promise<T> {
   // Two pdflatex passes per document; the engine's own limit is 120s each.
-  const deadline = AbortSignal.any([...(signal ? [signal] : []), AbortSignal.timeout(300_000)]);
+  const deadline = withinTime(300_000, signal);
   // In a group of its own: a cancel stops the pdflatex it runs too, not only
   // Python (command.ts).
   const child = spawn(python(), [bridgeScript, sources], {
@@ -210,10 +211,7 @@ export async function planTailoring(
   });
   if (words(request.description) < MIN_POSTING_WORDS) return stock(suggested);
 
-  const budget = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(options.timeoutMs ?? defaultBudget(config)),
-  ]);
+  const budget = withinTime(options.timeoutMs ?? defaultBudget(config), signal);
   const exchange: Exchange = { attempts: 0 };
   let output: Record<string, unknown>;
   try {

@@ -231,6 +231,7 @@ export function QueuePage({ panel }: { panel: PanelState }) {
                   {linkedApplication.aiFilled.map((entry) => (
                     <li key={entry.label}>
                       <strong>{entry.label}</strong>: {entry.value}
+                      {entry.caution && <p className="app-note">{entry.caution}</p>}
                     </li>
                   ))}
                 </ul>

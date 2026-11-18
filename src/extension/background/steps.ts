@@ -41,7 +41,7 @@ export async function checkSteps(app: Application): Promise<{ check: StepCheck; 
       ...(targets.submit ? { submit: targets.submit.label } : { submitProblem: problems.submit }),
       blockers: [...new Set(replies.flatMap((reply) => reply.blockers))].slice(0, 10),
       unfinished: replies.flatMap((reply) => reply.unfinished).slice(0, 30),
-      aiFilled: (app.aiFilled || []).map((entry) => `${entry.label}: ${entry.value}`.slice(0, 200)),
+      aiFilled: (app.aiFilled || []).map((entry) => `${entry.label}: ${entry.value}${entry.caution ? ` (${entry.caution})` : ""}`.slice(0, 260)),
       notes: app.missing.slice(0, 20),
     },
   };

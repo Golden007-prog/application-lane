@@ -4694,9 +4694,10 @@ test("AI response recovery prepares parallel drafts, shows warnings, and cannot 
       .toBe(true);
     await pages[3].bringToFront();
     await pages[3].locator("[name=email]").fill("human@example.test");
-    // The hung provider's application gives up in about 4 s when this test
-    // runs alone, but its drafting took 28 s twice in the full suite, with
-    // three tests at once (cause not found): the wait allows for that.
+    // The hung provider's application gives up in about 2 s. In the full
+    // suite its drafting once ran for a minute: its 2 s limit was an
+    // AbortSignal.any() timeout, which garbage collection can lose on Node 20
+    // (src/server/deadline.ts, now used instead).
     await expect
       .poll(async () => (await state()).applications.map((a) => a.status), {
         timeout: 60000,
@@ -21240,10 +21241,9 @@ test("Submit finds the page's button on a tab whose script is gone, as after an 
   await page.close();
 });
 
-// Automatic AI filling still leaves a question about identity, eligibility
-// or pay to the applicant: its suggestion is drafted for approval, while the
-// other fields are filled.
-test("automatic AI filling drafts a military-service question for approval and fills the rest", async () => {
+// Automatic AI filling holds nothing back: a question about identity,
+// eligibility or pay is filled like the rest, and listed for checking.
+test("automatic AI filling fills a military-service question with the rest, and lists it", async () => {
   const asked: string[] = [];
   const providerServer = createServer(async (req, res) => {
     const chunks: Buffer[] = [];
@@ -21290,12 +21290,9 @@ test("automatic AI filling drafts a military-service question for approval and f
     await ui({ type: "FILL_STEP", id: (await state()).applications[0].id, tabId });
     const app = async () => (await state()).applications[0];
     await expect(page.locator("#school")).toHaveValue("Michigan State University", { timeout: 30000 });
-    // The military-service question's suggestion waits in the panel, unfilled.
-    await expect.poll(async () => (await app()).note || "", { timeout: 30000 }).toContain("drafted for you to approve");
-    expect(Boolean((await app()).fieldFallbackSession?.jobId)).toBe(true);
-    await expect(page.locator("#branch")).toHaveValue("");
-    expect(((await app()).aiFilled || []).map((entry: { label: string }) => entry.label)).not.toContain("Branch of military service");
-    // It was asked once, for review, after the fill's own pass.
+    // The military-service question is filled too, and listed for checking.
+    await expect(page.locator("#branch")).toHaveValue("Army", { timeout: 30000 });
+    await expect.poll(async () => ((await app()).aiFilled || []).map((entry: { label: string }) => entry.label), { timeout: 30000 }).toContain("Branch of military service");
     expect(asked.filter((label) => label === "Branch of military service")).toHaveLength(1);
     await page.close();
   } finally {

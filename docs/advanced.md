@@ -120,9 +120,11 @@ After **Fill this step**, **Unfilled structured fields** lists empty fields your
 
 **Settings → AI filling** decides what **Fill this step** lets the model do:
 
-- *Fill automatically* (default): writes long answers and, for fields the rules did not recognise, values mapped from your saved details; the card lists them under "Filled by AI: check these". Questions about who you are (equal-opportunity questions), whether you may work there, and pay are the exception: AI drafts its answers to them after the fill, and they wait under **Unfilled structured fields** for you to approve.
+- *Fill automatically* (default): writes long answers and, for fields the rules did not recognise, values mapped from your saved details, questions about identity, work eligibility and pay included; the card lists them under "Filled by AI: check these". A legal or eligibility answer your saved legal details do not cover is filled too, with a caution beside it in that list.
 - *Review first*: fills only what the rules match and leaves drafts in the panel for approval.
 - *Profile only*: never calls the model during a fill.
+
+**Names in drafted text.** A cover letter or written answer is checked for names (companies, products, schools, tools) your profile does not hold. A name in neither your profile nor the posting is treated as made up: a written answer that uses one is left for you, and a letter is kept with a warning naming it. A name only the posting holds is fine when the text is about the employer ("I'd like to work on Acme Pay"), but not as your own experience ("I built Acme Pay"), since a posting can be written to steer the model; such an answer or letter is filled with a warning naming it.
 
 **Legal and eligibility questions** (a conviction, a clearance, a relative at the company) are left for you unless **Your profile → Legal and eligibility details** answers them. The final Submit is always yours. Signatures and consent boxes are yours too unless you allow them under **Your profile**: **Signatures** can sign the name and date on self-identification forms (disability, veteran) or every form including attestations, and a separate box lets terms, privacy and certification boxes be ticked. A signature typed for you is a legal signature; check the form before you submit it.
 

@@ -2,7 +2,7 @@
 // Split out of background.ts as it was; see background.ts for how it starts.
 import { type Application, type Field, type Profile, type FieldFallbackProblem, activeStatuses, type GenerationJob, normalize, type Proposal, type Observation, hasLegalDetails } from "../../shared/model";
 import { proposals, listAnswered, draftOnlySite, DRAFT_ONLY_NOTE } from "../../shared/matching";
-import { structuredFallbackField, leftReason, legalQuestion, reviewFirstQuestion } from "../../shared/questions";
+import { structuredFallbackField, leftReason, legalQuestion } from "../../shared/questions";
 import { releaseTrustedInput } from "../trusted-input";
 import { bg } from "./state";
 import { alive, answerFills, api, fieldFallbackFills, fieldFallbackRequests, frameCall, optionReads, persist, withPageTimers } from "./core";
@@ -487,8 +487,8 @@ export const leftAsLegal = (label: string) => bg.state.settings.legalQuestions !
 // Whether legal and eligibility questions go to the model at all: when the
 // applicant lets it answer them, or has saved legal details to answer from.
 export const legalAsked = (profile: Profile) => bg.state.settings.legalQuestions === "model" || hasLegalDetails(profile);
-export function noteAiFilled(app: Application, label: string, value: string) {
-  const entry = { label: label.slice(0, 200), value: value.replace(/\s+/g, " ").slice(0, 120) };
+export function noteAiFilled(app: Application, label: string, value: string, caution?: string) {
+  const entry = { label: label.slice(0, 200), value: value.replace(/\s+/g, " ").slice(0, 120), ...(caution ? { caution: caution.slice(0, 200) } : {}) };
   app.aiFilled = [...(app.aiFilled || []).filter((other) => other.label !== entry.label), entry].slice(-60);
 }
 // After a fill: the fields the profile rules left open are suggested values
@@ -507,12 +507,9 @@ export async function assist(app: Application, tabId: number) {
   }
   const { mode } = modelFills();
   const tried = new Set<string>();
-  // In automatic mode, questions about identity, eligibility and pay are not
-  // filled: they are drafted after the rest, for the applicant to approve
-  // (reviewFirstQuestion).
-  const held = new Set<string>();
-  const holds = (problem: FieldFallbackProblem) =>
-    mode === "auto" && reviewFirstQuestion(`${problem.question || ""} ${problem.label}`);
+  // In automatic mode every suggestion is filled, identity, eligibility and
+  // pay questions included: nothing holds the form back, and what the model
+  // filled is listed for the applicant to check.
   let filled = 0;
   let finished = false;
   const idle = () => !app.explicitFill && !activeStatuses.includes(app.status) && app.tabId === tabId;
@@ -525,9 +522,8 @@ export async function assist(app: Application, tabId: number) {
         const note = `Legal or eligibility question left for you: ${label}`.slice(0, 350);
         if (!app.missing.includes(note)) app.missing.push(note);
       }
-      for (const problem of scanned.problems) if (holds(problem)) held.add(problem.fieldId);
       const ids = scanned.problems
-        .filter((problem) => !tried.has(problem.fieldId) && !holds(problem))
+        .filter((problem) => !tried.has(problem.fieldId))
         .map((problem) => problem.fieldId)
         .slice(0, 100);
       if (!ids.length) break;
@@ -558,7 +554,7 @@ export async function assist(app: Application, tabId: number) {
             (!field.maxLength || draft.value.length <= field.maxLength)
           );
         })
-        .map((draft) => ({ fieldId: draft.fieldId, value: draft.value }));
+        .map((draft) => ({ fieldId: draft.fieldId, value: draft.value, caution: draft.caution }));
       if (!answers.length) break;
       const { results } = await withPageTimers(app, tabId, () => fillFieldFallback(app, { jobId: session.jobId, tabId, answers }));
       for (const result of results.filter((candidate) => candidate.ok)) {
@@ -566,23 +562,14 @@ export async function assist(app: Application, tabId: number) {
         const answer = answers.find((candidate) => candidate.fieldId === result.fieldId);
         if (!field || !answer) continue;
         filled++;
-        noteAiFilled(app, field.label, answer.value);
+        noteAiFilled(app, field.label, answer.value, answer.caution);
         app.missing = app.missing.filter((item) => item !== `Required: ${field.label}` && !item.startsWith(`Required: ${field.label}:`) && item !== `Optional unanswered: ${field.label}`);
       }
     }
     if (mode === "auto") {
-      // What was filled is listed for checking; what was held back is
-      // drafted now and waits in the panel for approval.
-      const waiting = [...held].filter((id) => !tried.has(id)).slice(0, 100);
-      if (idle()) {
-        if (waiting.length) await draftFieldFallback(app, tabId, waiting);
-        else await clearFieldFallback(app);
-      }
-      const parts = [
-        filled ? `${filled} more field${filled === 1 ? "" : "s"} filled by AI from your saved details. Check the ones listed.` : "",
-        waiting.length ? `${waiting.length} answer${waiting.length === 1 ? "" : "s"} about eligibility, identity or pay drafted for you to approve under Unfilled structured fields.` : "",
-      ].filter(Boolean);
-      if (parts.length && idle()) app.note = parts.join(" ");
+      // What was filled is listed for checking.
+      if (idle()) await clearFieldFallback(app);
+      if (filled && idle()) app.note = `${filled} more field${filled === 1 ? "" : "s"} filled by AI from your saved details. Check the ones listed.`;
     } else if (idle()) {
       const questions = (await questionFields(tabId)).fields.filter((field) => !field.value && !field.protected && !leftAsLegal(field.label));
       if (questions.length) await draftAnswers(app, tabId, questions.map((field) => field.id).slice(0, 250)).catch(() => {});

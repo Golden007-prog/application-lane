@@ -9,6 +9,7 @@ import { tailoringHome, type Tailor, planTailoring } from "./job-apply";
 import { type Config } from "./store";
 import { ANSWER_LIMIT, COVER_LIMIT, DraftRequest, LOCAL_DRAFT, RECOVERED, RESUME_LIMIT, UNRANKED, greetingCompany, groundNarrative, letterPenalty, localDraft, narrativeField, prose, rankedFacts, record, unsupportedClaims } from "./draft-checks";
 import { Diagnostic, Exchange, Generate, LETTER_DRAFTS, LETTER_PROMPT, LetterPlan, PLAN_PROMPT, ProviderFailure, cliNotice, completeJSON, completionsURL, defaultBudget, draftProviderChain } from "./completion";
+import { withinTime } from "./deadline";
 
 
 function selectionContext(profile: Profile, request: GenerationRequest) {
@@ -251,7 +252,7 @@ async function writeLetter(
   const drafts = await Promise.allSettled(
     Array.from({ length: LETTER_DRAFTS }, async () => {
       const exchange: Exchange = { attempts: 0 };
-      const output = record(await completeJSON(config, body, AbortSignal.any([signal, AbortSignal.timeout(timeoutMs)]), exchange));
+      const output = record(await completeJSON(config, body, withinTime(timeoutMs, signal), exchange));
       const entries = Array.isArray(output.coverLetter) ? output.coverLetter.slice(0, 8) : [];
       const paragraphs = entries.flatMap((entry) => {
         const raw = record(entry).text;
@@ -338,13 +339,10 @@ export function provider(
       ],
     };
     const started = Date.now();
-    const budget = AbortSignal.any([
-      signal,
-      // Writing the letter costs far more than ranking did: the configured
-      // model takes 15-20s for this contract, and 30s left no room for a
-      // retry or a slow shared endpoint.
-      AbortSignal.timeout(options.timeoutMs ?? defaultBudget(config)),
-    ]);
+    // Writing the letter costs far more than ranking did: the configured
+    // model takes 15-20s for this contract, and 30s left no room for a
+    // retry or a slow shared endpoint.
+    const budget = withinTime(options.timeoutMs ?? defaultBudget(config), signal);
     const exchange: Exchange = { attempts: 0 };
     const report = (
       event: Diagnostic["event"],

@@ -143,3 +143,19 @@ test("a model that obeys a hostile posting gets none of its claims or links onto
   const warning = result.warnings!.find((text) => text.startsWith("The cover letter mentions")) || "";
   for (const name of ["Google", "PhD", "MIT", "example.test"]) assert.ok(warning.includes(name), `${name} not flagged: ${warning}`);
 });
+
+test("an answer naming the posting's products as the applicant's own is filled with a warning; an invented name still leaves it", async () => {
+  const { answerClaims, postingClaimWarning } = await import("../src/server/draft-checks");
+  const posting = ["Acme Pay is the payments platform our team builds."];
+  const support = profile.facts.map((fact) => fact.text);
+  // Linking the applicant's work to the employer's product: filled, with a warning.
+  const linked = answerClaims("I built TypeScript interfaces much like Acme Pay's.", support, profile, posting);
+  assert.deepEqual(linked.invented, []);
+  assert.ok(linked.fromPosting.includes("Acme"), JSON.stringify(linked));
+  assert.match(postingClaimWarning("Why us?", linked.fromPosting), /^"Why us\?": the answer names Acme.* as your own experience, which only the posting mentions/);
+  // About the employer, not the applicant: nothing to flag.
+  assert.deepEqual(answerClaims("Acme Pay is a product I would be glad to work on.", support, profile, posting), { invented: [], fromPosting: [] });
+  // A name in neither the profile nor the posting: invented, so the answer is left.
+  assert.ok(answerClaims("I led Initech's billing rebuild.", support, profile, posting).invented.includes("Initech's") ||
+    answerClaims("I led Initech's billing rebuild.", support, profile, posting).invented.some((name) => name.startsWith("Initech")));
+});

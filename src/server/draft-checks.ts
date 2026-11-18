@@ -441,6 +441,20 @@ export function unsupportedClaims(
   return missing;
 }
 
+// What a written answer names that the profile does not support, in two
+// kinds: invented (in neither the profile nor the posting), which leaves the
+// answer to the applicant; and taken from the posting as the applicant's own
+// experience ("I built payment systems like Acme Pay"), which is filled with a
+// warning, as a letter is: the posting may have asked for it, or the answer
+// may only be linking the applicant's work to the employer's.
+export function answerClaims(text: string, support: string[], profile: Profile, posting: string[]) {
+  const invented = unsupportedClaims(text, [...support, ...posting], profile);
+  const fromPosting = unsupportedClaims(text, support, profile, posting).filter((name) => !invented.includes(name));
+  return { invented, fromPosting };
+}
+export const postingClaimWarning = (label: string, names: string[]) =>
+  `"${label}": the answer names ${names.join(", ")} as your own experience, which only the posting mentions and your confirmed facts do not support. Read it before submitting.`.slice(0, 350);
+
 // The job-apply skill greets the company by name. The tracker's name may be
 // a URL slug ("doordashusa", "acme") or "Application", so it is used only when
 // the posting itself writes it as a name, and in the posting's spelling.
@@ -571,23 +585,25 @@ export function groundNarrative(
     const written = screened.text;
     if (written) {
       // A written answer stands only when every checkable claim in it is in
-      // the applicant's confirmed facts or the posting. Unlike the letter it
-      // goes straight into the application, so one that names anything
-      // else is left for the applicant rather than kept with a warning.
+      // the applicant's confirmed facts or the posting. One that names
+      // anything else is left for the applicant; one that claims the
+      // posting's names as the applicant's own is filled with a warning
+      // (answerClaims).
       const cited = [...new Set(answer.factIds)]
         .filter((id) => facts.has(id))
         .slice(0, 3);
       if (!cited.length) return [];
-      const claims = unsupportedClaims(written, support, profile, [...posting, field.label]);
-      if (claims.length) {
+      const { invented, fromPosting } = answerClaims(written, support, profile, [...posting, field.label]);
+      if (invented.length) {
         answerWarnings.push(
-          `Left "${shortLabel(field.label)}" for you: the drafted answer mentioned ${claims.join(", ")}, which your confirmed facts do not support.`.slice(
+          `Left "${shortLabel(field.label)}" for you: the drafted answer mentioned ${invented.join(", ")}, which your confirmed facts do not support.`.slice(
             0,
             350,
           ),
         );
         return [];
       }
+      if (fromPosting.length) answerWarnings.push(postingClaimWarning(shortLabel(field.label), fromPosting));
       return [
         { fieldId: field.id, value: written.slice(0, 2000), factIds: cited },
       ];

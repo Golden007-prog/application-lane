@@ -4,7 +4,7 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 ## Unreleased
 
-- Security: an AI answer to a legal question must cite the saved legal detail that question is about (a saved clearance no longer answers a conviction question). Every drafting prompt names the page, posting and profile as untrusted data, and Codex's input is fenced so a posting cannot end it early. A saved API key is dropped when the endpoint moves to another server. Pairing codes last ten minutes, also while unpaired (a new one is printed when the old one runs out). Report screenshots, transcripts, exported documents and cached job lists are written for you alone, and an existing data folder is made yours alone.
+- An AI answer to a legal question that does not cite the saved legal detail the question is about (a saved clearance offered for a conviction question) is filled with a caution beside it in "Filled by AI: check these", not left empty.
 - Claude Code gets its instructions from a file instead of the command line, so drafting works with an npm-installed `claude.cmd` on Windows.
 - Settings → Processing calls the drafting limit **Applications drafted at once**, which is what it limits. The docs describe written answers as model-written and checked, and list every backend route.
 
@@ -20,7 +20,7 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 - A drafted answer the checking model faulted is kept on the profile's word only when one entry of your profile names everything it names, as whole words, outside your Known gaps, and it adds no duration, frequency or seniority. Before, a name written anywhere in your notes was enough, so "No Redis" under Known gaps could vouch for "three years of Redis". Your confirmed facts are also no longer read as part of the last section of your profile.md.
 
-- Eligibility answers are more careful. A list that words its answers as sentences ("Yes, I am a U.S. citizen") gets a plain Yes or No only when the sentence adds nothing the question does not ask. A work-authorization or sponsorship answer is given only for the job's country, and "Do you authorize a background check?" is no longer read as a work-authorization question. With AI filling automatic, questions about identity, work eligibility and pay are drafted for your approval instead of filled.
+- Eligibility answers are more careful. A list that words its answers as sentences ("Yes, I am a U.S. citizen") gets a plain Yes or No only when the sentence adds nothing the question does not ask. A work-authorization or sponsorship answer is given only for the job's country, and "Do you authorize a background check?" is no longer read as a work-authorization question. With AI filling automatic, questions about identity, work eligibility and pay are filled like any other and listed for you to check.
 
 - Every click a fill makes now passes one check that refuses Submit, Next, Continue and signing controls, including real clicks and Enter presses sent through the debugger.
 - **Next step** and **Submit…** on an application's card, and `lane next` / `lane submit`, press the page's own Next or Submit on request. Submit is off until **Settings → Processing** turns it on, shows the button, anything unfinished and the answers AI filled before it presses, and presses only after you confirm.

@@ -5,7 +5,6 @@ import { chromium, type Browser, type Page } from "@playwright/test";
 import { build } from "esbuild";
 import { globalConfigSchema } from "../src/engine/config/schema";
 import { emptyProfile } from "../src/shared/model";
-import { reviewFirstQuestion } from "../src/shared/questions";
 
 let browser: Browser;
 let page: Page;
@@ -82,20 +81,3 @@ test("a list worded in sentences gets a bare Yes only for one that adds no claim
   assert.equal(plain.value, "Yes, I am authorized to work in the United States");
 });
 
-test("questions about identity, eligibility and pay wait for the applicant even in automatic AI filling", () => {
-  for (const question of [
-    "Gender",
-    "Race/Ethnicity",
-    "Are you Hispanic or Latino?",
-    "Disability status",
-    "Protected veteran status",
-    "Are you legally authorized to work in the United States?",
-    "Will you require visa sponsorship?",
-    "What are your salary expectations?",
-    "Desired hourly pay rate",
-  ])
-    assert.equal(reviewFirstQuestion(question), true, question);
-  // Legal questions follow their own setting (legalQuestion).
-  for (const question of ["Preferred first name", "Years of experience with Python", "How did you hear about us?", "LinkedIn profile", "Have you ever been convicted of a felony?"])
-    assert.equal(reviewFirstQuestion(question), false, question);
-});

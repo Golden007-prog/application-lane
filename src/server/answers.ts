@@ -10,7 +10,8 @@ import {
   opinionQuestion,
   prose,
   tidyProse,
-  unsupportedClaims,
+  answerClaims,
+  postingClaimWarning,
   type Exchange,
 } from "./generation";
 import { tailoringHome } from "./job-apply";
@@ -23,6 +24,7 @@ import { conflictWarning, graduationFor, graduationRule, profileConflicts } from
 import { applicationQuestion, fitAnswerLength, logisticsQuestion as logistics } from "../shared/questions";
 import { questionTopic } from "../shared/standing";
 import { proposals } from "../shared/matching";
+import { withinTime } from "./deadline";
 export { applicationQuestion } from "../shared/questions";
 
 export type SkillContext = {
@@ -274,10 +276,7 @@ export async function writeAnswers(
   }
   const refs = new Map(fields.map((field, i) => [`q${i + 1}`, field]));
   const exchange: Exchange = { attempts: 0 };
-  const budget = AbortSignal.any([
-    signal,
-    AbortSignal.timeout(options.timeoutMs ?? defaultBudget(config)),
-  ]);
+  const budget = withinTime(options.timeoutMs ?? defaultBudget(config), signal);
   const parsed = await completeJSON(
     config,
     {
@@ -372,11 +371,13 @@ export async function writeAnswers(
     // The question is the employer's own wording: a value or principle it
     // names is not an invented one. Checked as drafted: "$100,000" is the
     // profile's wording, the figure "100000" is not.
-    const claims = unsupportedClaims(screened.text, support, profile, [...posting, field.label]);
-    if (claims.length) {
-      withhold(field, `the drafted answer mentioned ${claims.join(", ")}, which your profile does not support`);
+    const { invented, fromPosting } = answerClaims(screened.text, support, profile, [...posting, field.label]);
+    if (invented.length) {
+      withhold(field, `the drafted answer mentioned ${invented.join(", ")}, which your profile does not support`);
       continue;
     }
+    // Named from the posting as the applicant's own: filled, with a warning.
+    if (fromPosting.length) warnings.push(postingClaimWarning(shortLabel(field.label), fromPosting));
     const text = salaryFigure(field.label, field.kind, screened.text) ?? screened.text;
     const cited = Array.isArray(item.sources) ? item.sources : [item.source];
     const titles = cited.filter((source): source is string => typeof source === "string" && !!source.trim()).slice(0, 5);

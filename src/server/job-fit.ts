@@ -5,6 +5,7 @@ import { skillContext, type SkillContext } from "./answers";
 import { completeJSON, defaultBudget, type Exchange } from "./generation";
 import { evidenceEntries } from "./verify";
 import type { Config } from "./store";
+import { withinTime } from "./deadline";
 
 export type FitAssessor = (
   request: GenerationRequest,
@@ -139,7 +140,7 @@ export function assessJobFit(config: Config): FitAssessor {
             ...(options.graduation ? { graduationForThisApplication: options.graduation } : {}),
           }) },
         ],
-      }, AbortSignal.any([signal, AbortSignal.timeout(defaultBudget(config))]), exchange);
+      }, withinTime(defaultBudget(config), signal), exchange);
       signal.throwIfAborted();
       return normalizeFit(output, request, profile, evidence);
     } catch {

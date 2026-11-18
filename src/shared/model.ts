@@ -480,7 +480,7 @@ export type Observation = {
   // that keeps the form apart from the posting, usually the posting.
   referrer?: string;
 };
-export const CONTENT_VERSION = "2026-11-17-read-back";
+export const CONTENT_VERSION = "2026-11-18-own-keys";
 export type Proposal = {
   fieldId: string;
   value: string;
@@ -728,6 +728,9 @@ export type FieldFallbackDraft = FieldFallbackProblem & {
   source?: string;
   draftedWith?: DraftProvider;
   skipReason?: string;
+  // Filled all the same, but worth a look: a legal answer the saved legal
+  // details do not cover.
+  caution?: string;
 };
 export type FieldFallbackSession = {
   jobId?: string;
@@ -822,7 +825,7 @@ export type Application = {
   // a page's words.
   formFrames?: number[];
   // What the model filled in the last fill, for the applicant to check.
-  aiFilled?: { label: string; value: string }[];
+  aiFilled?: { label: string; value: string; caution?: string }[];
   // Questions the applicant answered by hand on this application, as last
   // seen: the same answer given on several applications is offered to save
   // ("Military Status: No Military", an employer).

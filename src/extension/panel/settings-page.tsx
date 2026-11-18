@@ -154,7 +154,7 @@ export function SettingsPage({ panel }: { panel: PanelState }) {
                 }))
               }
             >
-              <option value="auto">Fill automatically: AI answers go into the form, marked for you to check (identity, work eligibility and pay wait for your approval)</option>
+              <option value="auto">Fill automatically: AI answers go into the form, marked for you to check</option>
               <option value="review">Review first: AI drafts, you approve before anything is filled</option>
               <option value="off">Profile only: fill just what matches my saved details</option>
             </select>
