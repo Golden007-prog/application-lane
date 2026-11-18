@@ -274,8 +274,8 @@ async function cachedJSON(cacheDir: string, key: string, url: string, fetcher: F
   const response = await fetcher(url, { signal: AbortSignal.timeout(60_000), headers: { "User-Agent": "Application Lane job search" } });
   if (!response.ok) throw new Error(`${new URL(url).hostname} answered ${response.status}`);
   const body = await response.json();
-  await mkdir(cacheDir, { recursive: true });
-  await writeFile(file, JSON.stringify(body));
+  await mkdir(cacheDir, { recursive: true, mode: 0o700 });
+  await writeFile(file, JSON.stringify(body), { mode: 0o600 });
   return body;
 }
 

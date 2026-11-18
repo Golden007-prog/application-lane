@@ -596,7 +596,7 @@ export async function createApp(
         const extension = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif" } as const;
         const imageNames = (images || []).map((image, index) => `${fields.id}.image-${index + 1}.${extension[image.mime]}`);
         await mkdir(join(directory, "issues"), { recursive: true });
-        await Promise.all((images || []).map((image, index) => writeFile(join(directory, "issues", imageNames[index]), Buffer.from(image.data, "base64"))));
+        await Promise.all((images || []).map((image, index) => writeFile(join(directory, "issues", imageNames[index]), Buffer.from(image.data, "base64"), { mode: 0o600 })));
         const report = { ...fields, ...(imageNames.length ? { images: imageNames } : {}) };
         if (recording && report.recordingId !== recording.id) throw new Error("Recording does not match report.");
         if (har && report.network?.entries !== har.log.entries.length) throw new Error("Network capture does not match report.");

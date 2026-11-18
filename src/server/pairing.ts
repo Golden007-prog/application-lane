@@ -6,10 +6,13 @@ import { randomInt, timingSafeEqual } from "node:crypto";
 // the extension the person at this computer is using, not from another
 // extension installed alongside it.
 //
-// A code is open while the backend is unpaired (it does not expire then),
-// or for a few minutes after `npm start -- --pair` or `lane pair` asked for
-// one to move to another browser. Too many wrong codes retire the code and
-// lock pairing for a minute; a fresh code is shown in the terminal.
+// Every code lasts ten minutes. While the backend is unpaired, a new one
+// takes its place when it runs out (shown in the terminal), so the newest
+// code shown always works; after `npm start -- --pair` or `lane pair`, the
+// one code is open for those ten minutes. Too many wrong codes retire the
+// code and lock pairing for a minute; a fresh code is shown in the terminal.
+// A code that never ran out could be guessed at for as long as the backend
+// stayed unpaired.
 
 export const PAIRING_WINDOW_MS = 10 * 60_000;
 export const PAIRING_ATTEMPTS = 5;
@@ -25,17 +28,28 @@ export class Pairing {
   private expiresAt?: number;
   private failures = 0;
   private lockedUntil = 0;
+  // Unpaired: a new code replaces one that runs out.
+  private renew = false;
+  private timer?: ReturnType<typeof setTimeout>;
   constructor(
     private readonly announce: (announcement: PairingAnnouncement) => void,
     private readonly now: () => number = Date.now,
   ) {}
 
-  // A new code: without expiry while unpaired, or for the pairing window.
-  open(reason: PairingAnnouncement["reason"], expires = reason !== "unpaired"): PairingAnnouncement {
+  // A new code for the pairing window; while unpaired (reason "unpaired",
+  // or a rotation of such a code), renewed when it runs out.
+  open(reason: PairingAnnouncement["reason"], renew = reason === "unpaired" || (reason === "rotated" && this.renew)): PairingAnnouncement {
     this.code = String(randomInt(0, 1_000_000)).padStart(6, "0");
-    this.expiresAt = expires ? this.now() + PAIRING_WINDOW_MS : undefined;
+    this.expiresAt = this.now() + PAIRING_WINDOW_MS;
     this.failures = 0;
-    const announcement = { code: this.code, ...(this.expiresAt ? { expiresAt: this.expiresAt } : {}), reason };
+    this.renew = renew;
+    clearTimeout(this.timer);
+    // Shown in the terminal when it is replaced, without waiting for a request.
+    if (renew) {
+      this.timer = setTimeout(() => this.live(), PAIRING_WINDOW_MS + 1000);
+      this.timer.unref?.();
+    }
+    const announcement = { code: this.code, expiresAt: this.expiresAt, reason };
     this.announce(announcement);
     return announcement;
   }
@@ -44,6 +58,8 @@ export class Pairing {
     this.code = undefined;
     this.expiresAt = undefined;
     this.failures = 0;
+    this.renew = false;
+    clearTimeout(this.timer);
   }
 
   get state(): "open" | "closed" | "locked" {
@@ -52,7 +68,10 @@ export class Pairing {
   }
 
   private live() {
-    if (this.code && this.expiresAt && this.now() > this.expiresAt) this.close();
+    if (this.code && this.expiresAt && this.now() > this.expiresAt) {
+      if (this.renew) this.open("rotated", true);
+      else this.close();
+    }
     return Boolean(this.code);
   }
 
@@ -76,7 +95,7 @@ export class Pairing {
     if (++this.failures >= PAIRING_ATTEMPTS) {
       this.lockedUntil = this.now() + PAIRING_LOCKOUT_MS;
       // The guessed-at code is retired; the person at the terminal gets a new one.
-      this.open("rotated", this.expiresAt !== undefined);
+      this.open("rotated", this.renew);
       return { ok: false, status: 429, error: "Too many wrong codes. Wait a minute, then type the new code shown where Application Lane is running." };
     }
     return { ok: false, status: 403, error: "That code does not match. Check the six digits shown where Application Lane is running." };

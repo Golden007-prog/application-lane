@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { once } from "node:events";
 import { createApp } from "../src/server/app";
 import { configSchema } from "../src/server/store";
+import { updateConfig } from "../src/server/settings";
 
 test("the dashboard reads and edits drafting providers, the endpoint and folders", async () => {
   const directory = await mkdtemp(join(tmpdir(), "lane-settings-"));
@@ -166,4 +167,19 @@ test("a transcript uploaded on the dashboard becomes the one forms are given, an
     await new Promise<void>((done) => server.close(() => done()));
     await rm(root, { recursive: true, force: true });
   }
+});
+
+test("the saved API key is never sent to a different endpoint's server", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "lane-settings-key-"));
+  const config = configSchema.parse({ token: "a".repeat(64), endpoint: "https://api.example.test/v1", apiKey: "sk-saved" });
+  // The same server, another path: the key stays.
+  await updateConfig(config, directory, { endpoint: "https://api.example.test/v2" });
+  assert.equal(config.apiKey, "sk-saved");
+  // Another server: the key is dropped, and the page says none is saved.
+  const view = await updateConfig(config, directory, { endpoint: "https://elsewhere.example.test/v1" });
+  assert.equal(config.apiKey, "");
+  assert.equal(view.hasApiKey, false);
+  // A key given with the new endpoint is kept.
+  await updateConfig(config, directory, { endpoint: "https://third.example.test/v1", apiKey: "sk-new" });
+  assert.equal(config.apiKey, "sk-new");
 });

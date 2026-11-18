@@ -140,14 +140,20 @@ test("wrong codes are limited: the code is retired, a new one shown, and pairing
   }
 });
 
-test("a requested code expires after the pairing window; an unpaired one does not", () => {
+test("every code runs out after the pairing window; while unpaired, the newest one shown works", () => {
   let now = 1_000_000;
   const shown: PairingAnnouncement[] = [];
   const pairing = new Pairing((a) => shown.push(a), () => now);
   const unpaired = pairing.open("unpaired");
+  assert.equal(unpaired.expiresAt, now + PAIRING_WINDOW_MS);
   now += PAIRING_WINDOW_MS * 3;
+  // Run out: a new code is shown, and the old one no longer works.
   assert.equal(pairing.state, "open");
-  assert.deepEqual(pairing.attempt(unpaired.code, false), { ok: true });
+  assert.equal(shown.length, 2);
+  const renewed = shown[1];
+  assert.equal(renewed.reason, "rotated");
+  if (renewed.code !== unpaired.code) assert.equal(pairing.attempt(unpaired.code, false).ok, false);
+  assert.deepEqual(pairing.attempt(renewed.code, false), { ok: true });
   const requested = pairing.open("requested");
   now += PAIRING_WINDOW_MS + 1;
   assert.equal(pairing.state, "closed");

@@ -65,3 +65,14 @@ test("a profile that only loads in part is kept as a backup before it is recover
   const [backup] = await backups(directory);
   assert.equal(await readFile(join(directory, backup), "utf8"), broken);
 });
+
+test("a data folder that already existed open to others is made the applicant's alone", { skip: process.platform === "win32" }, async () => {
+  const { chmod, mkdir, stat } = await import("node:fs/promises");
+  const directory = await folder();
+  await chmod(directory, 0o755);
+  await mkdir(join(directory, "issues"), { mode: 0o755 });
+  await chmod(join(directory, "issues"), 0o755);
+  await new Store(directory).init();
+  assert.equal((await stat(directory)).mode & 0o777, 0o700);
+  assert.equal((await stat(join(directory, "issues"))).mode & 0o777, 0o700);
+});

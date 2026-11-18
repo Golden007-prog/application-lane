@@ -1,4 +1,4 @@
-import { copyFile, readdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, copyFile, readdir, readFile, stat, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
@@ -96,6 +96,7 @@ export async function transcriptArtifacts(
     const format = name.toLowerCase().endsWith(".pdf") ? ("pdf" as const) : ("docx" as const);
     const id = randomUUID();
     await copyFile(join(folder, name), join(directory, "artifacts", `${id}.${format}`));
+    await chmod(join(directory, "artifacts", `${id}.${format}`), 0o600);
     return {
       id,
       kind: "transcript",

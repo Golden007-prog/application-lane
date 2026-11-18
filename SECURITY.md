@@ -32,7 +32,7 @@ Application Lane has two parts that hold sensitive data: the browser extension a
 On first start the backend creates the token and prints a **6-digit pairing code**. The extension's dashboard exchanges that code for the token:
 
 - The code is accepted **only from an extension origin**.
-- It is accepted **only while the backend is unpaired**, or within **10 minutes** after `npm start -- --pair` / `lane pair` printed a new code (to move to another browser or extension).
+- Each code lasts **10 minutes**. While the backend is unpaired, a new code is printed when the old one runs out; after `npm start -- --pair` / `lane pair` printed a new code (to move to another browser or extension), that code is open for 10 minutes. No code stays open indefinitely to be guessed at.
 - **Five wrong codes** rotate the code and lock pairing for one minute.
 - Once paired, the backend records the extension ID and refuses other extensions.
 

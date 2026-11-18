@@ -104,7 +104,7 @@ export function SettingsPage({ panel }: { panel: PanelState }) {
             </select>
           </label>
           <label>
-            AI requests at once
+            Applications drafted at once
             <select
               value={queue.settings.generationConcurrency}
               onChange={(e) =>

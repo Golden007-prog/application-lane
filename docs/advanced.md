@@ -49,7 +49,7 @@ Local files are not encrypted at rest. The extension's own state (tracked applic
 | `checking` | `"thorough"` (default: another model checks every claim, about half a minute more per application) or `"fast"` (no check). It needs a second model: a second Drafting provider, a `checkProviders` entry, or `verifyModel`. With only one, nothing checks them, and **Settings → Drafting → Checking** says so. |
 | `verifyModel` | The API endpoint model used for checking when no other checker is available. |
 | `endpoint`, `model`, `apiKey` | The OpenAI-compatible API endpoint, model and key. `LANE_API_KEY` is read by `npm run setup`. HTTPS is required for remote endpoints; plain HTTP is allowed for loopback. |
-| `generationConcurrency` | AI requests at once, 1–4 (default 2). |
+| `generationConcurrency` | Applications drafted at once, 1–4 (default 2). Each one's drafting makes several model calls at the same time (its résumé brief, written answers, fit check and plan, then two letter drafts), so the number of model calls running together can be a few times this. |
 | `postingLookup` | `true` (default): read the full posting from the job board's public endpoint so drafts are tailored from it rather than from the form page. |
 | `documentsDir` | Where drafted documents are written as files. Default `~/Documents/Application Lane`. |
 | `transcriptsDir` | Where your transcript is kept. Default `<data folder>/transcripts`. |
@@ -80,7 +80,7 @@ If every provider fails, a local keyword-ranked draft is prepared instead (writt
 
 ## Résumés and cover letters
 
-The model selects and orders your confirmed facts for each job and writes the cover letter from the facts it cites. Résumé bullets and narrative answers keep your original confirmed wording. The letter's greeting and closing are always the extension's own. Every employer, product, technology, number and date in a written letter is checked against your confirmed facts and the posting; anything else is named in a review warning on the application and in the **Documents** preview, before the letter is attached.
+The model selects and orders your confirmed facts for each job and writes the cover letter from the facts it cites. Résumé bullets keep your original confirmed wording. Answers to written questions are written by the model from your profile, then checked against it the same way (see **Saved answers and written questions** below). The letter's greeting and closing are always the extension's own. Every employer, product, technology, number and date in a written letter is checked against your confirmed facts and the posting; anything else is named in a review warning on the application and in the **Documents** preview, before the letter is attached.
 
 Without LaTeX, the résumé PDF uses the built-in single-column layout, and the DOCX is always generated, for forms that accept nothing else.
 
@@ -139,7 +139,7 @@ After navigation to another URL or an extension restart, in-flight applications 
 
 Login and emailed-link tabs can be attached to the same application. Application Lane suggests likely matches but never attaches a tab without confirmation.
 
-Default limits are four active fill requests and two AI requests at once (Settings → Processing), and two lanes per site.
+Default limits are four active fill requests and two applications drafted at once (Settings → Processing; each drafting makes several model calls together), and two lanes per site.
 
 ## Issue reports and recordings
 

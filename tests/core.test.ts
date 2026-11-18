@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { once } from "node:events";
@@ -430,6 +430,7 @@ test("issue reports persist locally, export intact, delete individually, and cle
     const picturedReport = await (await fetch(`${url}/v1/issues/${pictured}`, { headers })).json();
     assert.deepEqual(picturedReport.images, [`${pictured}.image-1.png`, `${pictured}.image-2.jpg`]);
     assert.deepEqual(await readFile(join(directory, "issues", `${pictured}.image-1.png`)), png);
+    if (process.platform !== "win32") assert.equal((await stat(join(directory, "issues", `${pictured}.image-1.png`))).mode & 0o777, 0o600);
     // Not an image type, or not base64: refused.
     for (const images of [[{ mime: "text/html", data: "PGI+" }], [{ mime: "image/png", data: "<script>" }]])
       assert.notEqual((await fetch(`${url}/v1/issues`, { method: "POST", headers, body: JSON.stringify({ ...report, id: randomUUID(), images }) })).status, 201);

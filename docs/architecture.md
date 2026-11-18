@@ -10,22 +10,46 @@ The tracker is persisted in `chrome.storage.local`; backend state is written ato
 
 Every endpoint except the pairing handshake requires `Authorization: Bearer <pairing-token>`. JSON requests and responses are used throughout. The service accepts only a loopback Host and either the paired extension's origin or authenticated requests without an Origin header (local CLI use). The handshake (`POST /v1/hello`, `POST /v1/pair/request`) is the only unauthenticated part: it answers only a `chrome-extension://` origin, and hands out the token only for the six-digit code the backend printed, while it is unpaired or within ten minutes of `--pair` / `lane pair`; five wrong codes retire the code and lock pairing for a minute (src/server/pairing.ts). No unauthenticated status or artifact routes exist.
 
-| Route                                     | Purpose                                                              |
-| ----------------------------------------- | -------------------------------------------------------------------- |
-| `POST /v1/pair`                           | Bind the local service to the authenticated extension ID.            |
-| `POST /v1/hello`                          | Unauthenticated, extension origin only: whether pairing is open.     |
-| `POST /v1/pair/request`                   | Unauthenticated, extension origin only: the code for the token.      |
-| `POST /v1/pair/open`                      | Command line only (no Origin): show a new pairing code.              |
-| `GET /v1/status`                          | Non-secret provider configuration and generation limits.             |
-| `GET /v1/profile`, `PUT /v1/profile`      | Versioned confirmed profile; stale updates are rejected.             |
-| `POST /v1/import`                         | Base64 PDF/DOCX to unconfirmed plain text, limited to 10 MB.         |
-| `PUT /v1/settings`                        | Set generation concurrency, 1–4.                                     |
-| `POST /v1/jobs`                           | Idempotent generation for an application ID and operation revision.  |
-| `GET /v1/jobs/:id`, `DELETE /v1/jobs/:id` | Poll a job or cancel pending work.                                   |
-| `GET /v1/artifacts/:id`                   | Metadata and base64 bytes for a completed current-profile artifact.  |
-| `POST /v1/issues`, `GET /v1/issues`       | Persist a local diagnostic report or list report summaries.          |
-| `GET /v1/issues/:id`, `DELETE /v1/issues/:id` | Export or delete one full local diagnostic report.               |
-| `DELETE /v1/data`                         | Cancel generation, then delete profile, history, artifacts, and reports. |
+| Route | Purpose |
+| --- | --- |
+| **Pairing and status** | |
+| `POST /v1/hello` | Unauthenticated, extension origin only: whether pairing is open. |
+| `POST /v1/pair/request` | Unauthenticated, extension origin only: the code for the token. |
+| `POST /v1/pair/open` | Command line only (no Origin): show a new pairing code. |
+| `POST /v1/pair` | Bind the local service to the authenticated extension ID. |
+| `GET /v1/status` | Non-secret provider configuration and generation limits. |
+| `GET /v1/live` (WebSocket) | The command line's live line: commands to the extension and the queue as it changes. The token is its first message. |
+| **Profile** | |
+| `GET /v1/profile`, `PUT /v1/profile` | Versioned confirmed profile; stale updates are rejected. |
+| `GET /v1/profile/application` | The profile as one application should state it (per-role graduation, preferences). |
+| `GET /v1/profile/conflicts` | Where the profile and the tailoring folder's notes disagree. |
+| `GET /v1/profile/bundle`, `PUT /v1/profile/bundle` | Export or import the profile (and tailoring files) to move it to another computer. |
+| `POST /v1/import` | Base64 PDF/DOCX to unconfirmed plain text, limited to 10 MB. |
+| **Settings** | |
+| `PUT /v1/settings` | Generation concurrency (1–4) and checking. |
+| `GET /v1/config`, `PUT /v1/config` | The Drafting settings: providers, checkers, endpoint, folders. The API key is write-only. |
+| `PUT /v1/transcript` | Save the applicant's transcript (PDF or DOCX) for forms that ask for one. |
+| **Drafting** | |
+| `POST /v1/jobs` | Idempotent generation for an application ID and operation revision. |
+| `GET /v1/jobs/:id`, `DELETE /v1/jobs/:id` | Poll a job or cancel pending work. |
+| `POST /v1/jobs/:id/files`, `POST /v1/jobs/:id/files/open` | Write a job's documents to the documents folder, or open that folder. |
+| `GET /v1/artifacts/:id` | Metadata and base64 bytes for a completed current-profile artifact. |
+| **Applications** | |
+| `GET /v1/queue`, `PUT /v1/queue` | The tracked applications as the command line sees them (mirrored by the extension). |
+| `GET /v1/inbox`, `POST /v1/inbox`, `DELETE /v1/inbox` | Links queued from the command line or Find jobs, waiting for the extension. |
+| `GET /v1/submissions`, `POST /v1/submissions`, `DELETE /v1/submissions/:id` | The history of submitted applications. |
+| `GET /v1/search/settings`, `PUT /v1/search/settings`, `GET /v1/search`, `POST /v1/search` | Find jobs: its settings, the last results, and a new search. |
+| **Reports and recordings** | |
+| `POST /v1/issues`, `GET /v1/issues` | Persist a local diagnostic report or list report summaries. |
+| `GET /v1/issues/:id`, `DELETE /v1/issues/:id` | Export or delete one full local diagnostic report. |
+| `GET /v1/issues/:id/share` | A report cleaned of the applicant's details, for Share on GitHub. |
+| `PUT /v1/issues/:id/network` | Attach a network capture to a saved report. |
+| `POST /v1/recordings`, `GET /v1/recordings`, `GET /v1/recordings/:id`, `DELETE /v1/recordings/:id` | Page-activity recordings. |
+| `POST /v1/captures` | A fill's capture, kept for replaying a problem. |
+| `GET /v1/repairs`, `PUT /v1/repairs/:id`, `DELETE /v1/repairs/:id` | Repair records the command line's repair commands keep. |
+| `GET /v1/fixer`, `GET /v1/fixer/settings`, `PUT /v1/fixer/settings`, `DELETE /v1/fixer/health` | Developer builds only: the maintainer's fixer. |
+| **Your data** | |
+| `DELETE /v1/data` | Cancel generation, then delete the profile, history, documents, reports, recordings and backups. |
 
 Contracts and validation are in `src/shared/model.ts`. A generation request includes application ID, operation revision, profile revision, job text, and frame-prefixed field observations. An artifact is bound to an application and operation; its ID alone cannot authorize a page attachment.
 
@@ -56,7 +80,7 @@ Issue capture is user initiated and requires a checkbox acknowledging that ordin
 
 ## Failure behavior
 
-Unknown eligibility and demographic questions stay unanswered unless the profile contains an exact reusable answer. Passwords remain manual; signatures, certifications and consent boxes too, unless the applicant's settings allow them. The provider returns short per-request fact references, narrative-question references and the cover letter text, with a 2,400-token output cap. A truncated response is discarded rather than repaired. Only empty, unprotected, nonsensitive narrative questions are included (up to 20); resume and cover selections are capped at 24 and four facts. Saved fact and field identities are unchanged. The cover letter is the one place model prose reaches a document: each written paragraph is kept only with its claim check, which compares every number, acronym, product name and mid-sentence capitalised word against the confirmed facts, the applicant's own profile and the posting. Unmatched words become a review warning that names them; the draft is still delivered, because the applicant decides what to do with it. Resume bullets and narrative answers remain verbatim confirmed text.
+Unknown eligibility and demographic questions stay unanswered unless the profile contains an exact reusable answer. Passwords remain manual; signatures, certifications and consent boxes too, unless the applicant's settings allow them. The provider returns short per-request fact references, narrative-question references and the cover letter text, with a 2,400-token output cap. A truncated response is discarded rather than repaired. Only empty, unprotected, nonsensitive narrative questions are included (up to 20); resume and cover selections are capped at 24 and four facts. Saved fact and field identities are unchanged. The cover letter is the one place model prose reaches a document: each written paragraph is kept only with its claim check, which compares every number, acronym, product name and mid-sentence capitalised word against the confirmed facts, the applicant's own profile and the posting. Unmatched words become a review warning that names them; the draft is still delivered, because the applicant decides what to do with it. Resume bullets remain verbatim confirmed text. Written answers are model prose from the profile, held to the same checks as the letter: a sentence the checker faults is taken out, and an answer that loses too much is left for the applicant.
 
 Responses are normalized to the internal narrative contract: selected references must resolve to confirmed facts, and text comes from that profile. Legacy entries missing a fact ID can be recovered only by exact confirmed text equality. Invalid entries are discarded; an empty cover selection uses resume evidence. Unusable responses, including truncated completions, use a stable keyword-ranked local draft with no generated narrative answers. Repaired and fallback drafts carry locally generated review warnings in `narrative.warnings`, and the panel displays them on the application and document preview. Provider-supplied warnings and prose are not trusted.
 

@@ -1,4 +1,4 @@
-import { normalize, type Field } from "./model";
+import { normalize, type Field, type LegalDetailKey } from "./model";
 import { missingOptionalProfileField, profileFactQuestion } from "./profile-facts";
 
 const identity =
@@ -114,6 +114,25 @@ const legalOrEligibility =
   /\b(convict\w*|felon\w*|misdemeano\w*|criminal\w*|arrest\w*|pending charges?|probation|parole|security clearance|clearance|polygraph|background (check|investigation)|drug (test|screen)\w*|non ?compete|non ?solicit\w*|restrictive covenant|confidentiality agreement|asked to resign|disciplinary action|disciplined|debar\w*|sanctioned|sanctions list|export control\w*|itar|conflicts? of interest|government (official|employee|agency)|public official|bankrupt\w*|lawsuit\w*|litigation|licen[cs]e (been )?(revoked|suspended))\b|\b(terminated|termination|fired|dismissed|discharged)\b.{0,60}\b(employ\w*|job|position|company)\b|\b(employ\w*|job|position)\b.{0,60}\b(terminated|termination|fired|dismissed|discharged)\b|\b(relatives?|family members?|related to (any|anyone|someone|an?|current|our|employees?))\b.{0,60}\b(work|works|working|employ\w*|company)\b|\b(work|employ)\w*\b.{0,40}\b(relatives?|family members?|related to (any|anyone|someone|an?|current|our|employees?))\b/;
 export function legalQuestion(label: string): boolean {
   return legalOrEligibility.test(normalize(label));
+}
+
+// Which of the applicant's saved legal details (Profile.legal) a legal
+// question asks about. An AI answer to it must stand on one of these, or on
+// "Anything else": a saved clearance does not answer a question about a
+// conviction. Empty when the question names none of them.
+const legalTopicPatterns: [LegalDetailKey, RegExp][] = [
+  ["criminal", /\b(convict\w*|felon\w*|misdemeano\w*|criminal\w*|arrest\w*|pending charges?|probation|parole)\b/],
+  ["clearance", /\b(security clearance|clearance|polygraph)\b/],
+  ["exportControl", /\b(export control\w*|itar|ear|u s person|us person)\b/],
+  ["agreements", /\b(non ?compete|non ?solicit\w*|restrictive covenant|confidentiality agreement)\b/],
+  ["terminations", /\b(terminated|termination|fired|dismissed|discharged|asked to resign|disciplinary action|disciplined)\b/],
+  ["government", /\b(government (official|employee|agency)|public official|debar\w*|sanctioned|sanctions list)\b/],
+  ["relatives", /\b(relatives?|family members?|related to)\b/],
+  ["screening", /\b(background (check|investigation)|drug (test|screen)\w*)\b/],
+];
+export function legalTopics(label: string): LegalDetailKey[] {
+  const text = normalize(label);
+  return legalTopicPatterns.filter(([, pattern]) => pattern.test(text)).map(([key]) => key);
 }
 
 // Questions whose AI suggestion waits for the applicant even when AI filling

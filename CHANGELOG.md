@@ -4,6 +4,10 @@ All notable changes to Application Lane are recorded here. The format follows [K
 
 ## Unreleased
 
+- Security: an AI answer to a legal question must cite the saved legal detail that question is about (a saved clearance no longer answers a conviction question). Every drafting prompt names the page, posting and profile as untrusted data, and Codex's input is fenced so a posting cannot end it early. A saved API key is dropped when the endpoint moves to another server. Pairing codes last ten minutes, also while unpaired (a new one is printed when the old one runs out). Report screenshots, transcripts, exported documents and cached job lists are written for you alone, and an existing data folder is made yours alone.
+- Claude Code gets its instructions from a file instead of the command line, so drafting works with an npm-installed `claude.cmd` on Windows.
+- Settings → Processing calls the drafting limit **Applications drafted at once**, which is what it limits. The docs describe written answers as model-written and checked, and list every backend route.
+
 - `state.json`, which holds your profile, now records its format. Before it is changed on load (an older format, or a profile that only loads in part) the file as it was is kept as `state.json.backup-<time>`; a file a newer version wrote, or one that cannot be read, stops the backend with a message naming it instead of being overwritten. Delete local application data removes the backups too.
 
 - **Settings → Drafting → Checking** now says when nothing checks your drafts: with one Drafting provider and no checker, no second model can check them. A checker or provider added in Settings checks the next drafts without restarting the backend, as Settings promises.

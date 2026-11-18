@@ -130,13 +130,13 @@ export async function saveTranscript(config: Config, directory: string, raw: unk
   if (bytes.subarray(0, signature.length).toString("latin1") !== signature)
     throw new Error(`That file is not a ${kind === "pdf" ? "PDF" : "Word document"}, whatever its name says.`);
   const folder = transcriptsFolder(config.transcriptsDir, directory);
-  await mkdir(folder, { recursive: true });
-  await writeFile(join(folder, name), bytes);
+  await mkdir(folder, { recursive: true, mode: 0o700 });
+  await writeFile(join(folder, name), bytes, { mode: 0o600 });
   // Kept so "Delete local application data" removes what was uploaded here,
   // and nothing else in a folder the applicant may share.
   const record = join(directory, "transcripts-uploaded.json");
   const uploaded = JSON.parse(await readFile(record, "utf8").catch(() => "[]")) as string[];
-  await writeFile(record, JSON.stringify([...new Set([...uploaded, name])]));
+  await writeFile(record, JSON.stringify([...new Set([...uploaded, name])]), { mode: 0o600 });
   return configView(config, directory);
 }
 
@@ -168,6 +168,9 @@ export async function updateConfig(config: Config, directory: string, raw: unkno
   if (input.checkProviders) next.checkProviders = input.checkProviders;
   if (input.endpoint !== undefined) {
     if (!/^https?:$/.test(new URL(input.endpoint).protocol)) throw new Error("The endpoint must be an http(s) URL.");
+    // The saved key was given for the old endpoint's server: it is not sent
+    // to another one. A new server needs its key typed again.
+    if (new URL(input.endpoint).origin !== new URL(config.endpoint).origin && !input.apiKey) next.apiKey = "";
     next.endpoint = input.endpoint;
   }
   if (input.model !== undefined) next.model = input.model.trim();

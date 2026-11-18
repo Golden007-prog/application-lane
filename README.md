@@ -67,7 +67,7 @@ You can fill several applications at the same time; each one runs in its own lan
 - It **never submits** an application and **never clicks Next, Continue or Submit** on its own. Every click a fill makes passes one check that refuses those buttons; they are pressed only when you ask, one press per request.
 - It does not sign, initial or tick consent boxes unless you allow it: **Your profile → Signatures** can sign self-identification forms (disability, veteran) or every form, and a separate box allows ticking terms and privacy acknowledgements. Both are off until you turn them on.
 - It does not solve CAPTCHAs or log in for you.
-- It does not invent facts: résumé bullets and saved answers use your own confirmed wording, and drafted text is checked against your profile.
+- It does not invent facts: résumé bullets and saved answers use your own confirmed wording, and drafted text (cover letters and written answers) is checked against your profile.
 - It only reads and drafts on LinkedIn and Indeed; it does not fill or scrape there.
 - It does not collect telemetry or send your data to the project. There is no account.
 
@@ -128,7 +128,7 @@ The command line uses the same themes: `npm run lane -- status --theme velocity`
 
 **The extension says it is not connected.** Check that the backend window is still open and showed the `http://127.0.0.1:4318` banner. If you closed it, start it again, then choose **Refresh connection** under **Settings → Backend connection**.
 
-**The pairing code is rejected or locked.** Type the code from the most recent banner. A code is accepted only while the backend is not yet paired, or within 10 minutes after you ask for a new one. After 5 wrong tries the code changes and pairing is locked for a minute; wait, then use the new code the backend prints.
+**The pairing code is rejected or locked.** Type the code from the most recent banner. Each code lasts 10 minutes: while the backend is not yet paired it prints a new one when the old one runs out, and after you ask for a new one (to pair another browser) that one code is open for 10 minutes. After 5 wrong tries the code changes and pairing is locked for a minute; wait, then use the new code the backend prints.
 
 **The backend is paired to another browser or extension.** Stop the backend and start it with `npm start -- --pair` (or `lane pair`). It prints a new code that works for 10 minutes; type it into the dashboard of the browser you want to use. As a fallback, open **Settings → Backend connection** and paste the 64-character token from `config.json` in your [data folder](docs/advanced.md#where-your-data-lives). Treat that token like a password.
 

@@ -2,7 +2,7 @@
 // own file chooser: one folder per job, moved under Sent once it is submitted.
 // Only files recorded here as written are ever replaced or removed.
 import { spawn } from "node:child_process";
-import { copyFile, mkdir, readdir, rename, rm, rmdir } from "node:fs/promises";
+import { chmod, copyFile, mkdir, readdir, rename, rm, rmdir } from "node:fs/promises";
 import { join } from "node:path";
 import { release } from "node:os";
 import type { Artifact, GenerationJob, Profile } from "../shared/model";
@@ -79,13 +79,16 @@ export async function exportDocuments(
     files: [],
   };
   const folder = folderOf(root, exported);
-  await mkdir(folder, { recursive: true });
+  await mkdir(folder, { recursive: true, mode: 0o700 });
   for (const artifact of job.artifacts) {
     let name = exportedFileName(profile, artifact, request.company);
     // Two documents of one kind and format keep both.
     for (let n = 2; exported.files.some((file) => file.name === name); n++)
       name = name.replace(/(?: \(\d+\))?(\.[^.]+)$/, ` (${n})$1`);
     await copyFile(join(dataDirectory, "artifacts", `${artifact.id}.${artifact.format}`), join(folder, name));
+    // The applicant's résumé and letter: theirs alone, like the data folder.
+    // (On WSL the folder is on Windows, which may refuse modes: no matter.)
+    await chmod(join(folder, name), 0o600).catch(() => {});
     exported.files.push({ artifactId: artifact.id, kind: artifact.kind, name });
   }
   job.exported = exported;
