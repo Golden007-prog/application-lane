@@ -25,6 +25,8 @@ jobs:
       - run: npm ci
       - name: Type check
         run: npm run check
+      - name: Lint
+        run: npm run lint
       # Some unit tests drive a headless Chromium (the config interpreter,
       # the submit capture): without it they failed and the run hung.
       - run: npx playwright install --with-deps chromium

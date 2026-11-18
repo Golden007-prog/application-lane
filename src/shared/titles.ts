@@ -3,7 +3,7 @@
 export function genericTitle(title: string, url: string): boolean {
   const text = title.replace(/\s+/g, " ").trim();
   let host = "";
-  try { host = new URL(url).hostname; } catch {}
+  try { host = new URL(url).hostname; } catch { /* not a URL: no host to compare with */ }
   return !text || text === host || /^https?:\/\//i.test(text) ||
     /^(candidate profile|my profile|profile|candidate home|my (applications?|account|dashboard)|sign ?in|log ?in|sign ?up|create (an )?account|your session (has expired|is about to time out|timed out)\.?|session (expired|timeout)|career opportunities|careers?|find a job|job search|search jobs|jobs|apply|application|job application|welcome)\b.{0,60}$/i.test(text) ||
     /\bhomepage/i.test(text);

@@ -118,7 +118,7 @@ function snapshot(): string {
   // .claude is left out; where git already ignores it (the public checkout,
   // whose private files are excluded), naming it fails the whole add.
   let claudeIgnored = false;
-  try { execFileSync("git", ["check-ignore", "-q", ".claude"]); claudeIgnored = true; } catch {}
+  try { execFileSync("git", ["check-ignore", "-q", ".claude"]); claudeIgnored = true; } catch { /* not ignored: leave it out of the add */ }
   execFileSync("git", ["add", "-A", "--", ".", ...(claudeIgnored ? [] : [":!.claude"])], { env, stdio: ["ignore", "ignore", "pipe"] });
   tree = execFileSync("git", ["write-tree"], { env }).toString().trim();
   if (without.length) {

@@ -1,7 +1,8 @@
 name: Nightly browser suite
 
-# The whole browser suite (about 20 minutes): every night, and by hand from
-# the Actions tab. Pushes and pull requests run ci.yml's smoke tests instead.
+# The whole browser suite (about 20 minutes), and the unit tests' coverage:
+# every night, and by hand from the Actions tab. Pushes and pull requests run
+# ci.yml's smoke tests instead.
 on:
   schedule:
     - cron: "17 9 * * *"
@@ -37,4 +38,26 @@ jobs:
           path: |
             playwright-report/
             test-results/
+          if-no-files-found: ignore
+
+  # Which lines of src/ the unit tests reach, by file, in the run's log and
+  # as an lcov file to download. A report, not a gate.
+  coverage:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Unit test coverage
+        run: npm run coverage -- --test-timeout=120000 --test-coverage-include="src/**" --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=lcov.info
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        if: always()
+        with:
+          name: coverage
+          path: lcov.info
           if-no-files-found: ignore

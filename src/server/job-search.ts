@@ -61,7 +61,7 @@ function sameCompany(a: string, b: string): boolean {
 // read by its path, Greenhouse's gh_jid, Microsoft's pid, a board's id).
 function jobIds(url: string): string[] {
   let text = url;
-  try { text = decodeURIComponent(url); } catch {}
+  try { text = decodeURIComponent(url); } catch { /* a stray "%": read it as it is */ }
   return [...new Set([
     ...(text.match(/\d{5,}/g) || []),
     // Workday's "…Intern_R121996": an underscore before it is no word break.

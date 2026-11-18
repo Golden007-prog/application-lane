@@ -16,6 +16,8 @@
     "check": "tsc --noEmit",
     "test": "node scripts/test-unit.mjs",
     "leak-check": "node scripts/leak-check.mjs",
+    "lint": "node scripts/lint.mjs",
+    "coverage": "node scripts/test-unit.mjs --experimental-test-coverage",
     "hooks": "git config core.hooksPath .githooks && echo \"Leak-check hooks on (pre-commit, commit-msg, pre-push).\"",
     "test:browser": "playwright test --grep-invert \"throughput benchmark\"",
     "benchmark": "playwright test --grep \"throughput benchmark\"",
