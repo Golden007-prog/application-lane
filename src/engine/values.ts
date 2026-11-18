@@ -6,7 +6,7 @@ import { degreeAliases, graduated, highestRow, studying } from "../shared/educat
 import { askedCountry, authorizationAnswer, jobCountry } from "../shared/authorization";
 import { priorEmploymentAnswer, questionTopic } from "../shared/standing";
 import { formatSalary } from "../shared/salary";
-import { localDate, formatDate, profileDateFormat } from "../shared/dates";
+import { localDate, formatDate, profileDateFormat, MONTH_NAMES } from "../shared/dates";
 import { dialCountry, splitPhone } from "../shared/phone";
 import globalsData from "./config/globals.json" with { type: "json" };
 import { isFluent, levelChoices, profileLanguages } from "../shared/languages";
@@ -186,7 +186,7 @@ function historyValue(
   if (/_month$/.test(key)) return match[2];
   // Oracle lists months by name ("August").
   if (/_month_text$/.test(key) && match[2])
-    return ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][Number(match[2]) - 1];
+    return MONTH_NAMES[Number(match[2]) - 1];
   // A day list's own numbering ("5"); a date saved by month alone is the 1st.
   if (/_day$/.test(key) && match[2]) return String(Number(match[3] || "1"));
 }

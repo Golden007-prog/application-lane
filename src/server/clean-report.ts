@@ -6,13 +6,13 @@
 // strings out of a report (content.ts). What is left is the applicant: their
 // name, email, phone, address, schools, employers, references and profile
 // links, wherever a page or the note shows them, and the other companies in
-// their queue. The terms are the leak check's (scripts/leak-check.mjs), so
+// their queue. The terms are the leak check's (leak-terms.mjs, which scripts/leak-check.mjs uses too), so
 // what it would stop in a commit is what is cleaned here; the report's own
 // company and its site stay, since the problem cannot be reproduced without
 // them. After replacing, the leak check reads the result again, and a report
 // with anything left is refused rather than shared.
 
-import { collectTerms, findLeaks, matcher, type LeakTerm } from "../../scripts/leak-check.mjs";
+import { collectTerms, findLeaks, matcher, type LeakTerm } from "./leak-terms.mjs";
 import type { IssueReport } from "../shared/model";
 
 export type CleanInput = {

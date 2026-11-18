@@ -57,7 +57,7 @@ test("an AI legal answer must cite the saved detail its question asks about", as
 
 test("every drafting prompt names the page, posting and profile text as data, never instructions", async () => {
   const sources = await Promise.all(
-    ["src/server/field-fallback.ts", "src/server/answers.ts", "src/server/verify.ts", "src/server/job-fit.ts", "src/server/job-apply.ts", "src/server/generation.ts"].map(async (file) => [file, await (await import("node:fs/promises")).readFile(file, "utf8")] as const),
+    ["src/server/field-fallback.ts", "src/server/answers.ts", "src/server/verify.ts", "src/server/job-fit.ts", "src/server/job-apply.ts", "src/server/completion.ts"].map(async (file) => [file, await (await import("node:fs/promises")).readFile(file, "utf8")] as const),
   );
   for (const [file, text] of sources) {
     const prompts = [...text.matchAll(/const ([A-Z_]+_PROMPT) =\s*\n?\s*[`'"]([\s\S]{0,600})/g)];

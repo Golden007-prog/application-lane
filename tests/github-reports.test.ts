@@ -199,6 +199,9 @@ test("a patch from the isolated session is taken only if it changes ordinary fil
   // Anything else of the repository: its hooks, workflows, scripts, dependencies.
   for (const path of [".githooks/pre-push", ".github/workflows/ci.yml", "scripts/leak-check.mjs", "package.json", "src/../package.json"])
     assert.throws(() => checkPatch(diff(path)), /outside src\/ and tests\//, path);
+  // Nor what finds the applicant's details, though it is under src/.
+  for (const path of ["src/server/leak-terms.mjs", "src/server/clean-report.ts"])
+    assert.throws(() => checkPatch(diff(path)), /find the applicant's details/, path);
   assert.throws(() => checkPatch(diff("src/a.ts").replace(/^index .*\n/m, "GIT binary patch\n")), /binary/);
   assert.throws(() => checkPatch(`diff --git a/src/link b/src/link\nnew file mode 120000\n`), /link, or changes a file's mode/);
   assert.throws(() => checkPatch(`diff --git a/src/run.sh b/src/run.sh\nold mode 100644\nnew mode 100755\n`), /mode/);

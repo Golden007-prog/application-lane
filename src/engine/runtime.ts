@@ -9,7 +9,7 @@ import {
 import { configs, globals } from "./config/catalog";
 import type { InputSelector } from "./config/schema";
 import type { Profile } from "../shared/model";
-import { labelText } from "../extension/semantics";
+import { labelText } from "./page/labels";
 
 function siteConfig() {
   const matching = configs.filter((config) =>

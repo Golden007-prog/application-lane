@@ -7,6 +7,7 @@ import { formatSalary, parseSalary } from "../shared/salary";
 import { questionTopic } from "../shared/standing";
 import { skillContext, type SkillContext } from "./answers";
 import type { Config } from "./store";
+import { MONTH_NAMES_LOWER } from "../shared/dates";
 
 // Answers kept both in the extension profile and in the job-applier
 // markdown. Direct fills (yes/no, demographics, history rows) come from the
@@ -44,7 +45,7 @@ const choiceFields: { label: RegExp; field: ChoiceField; name: string }[] = [
   { label: /^veteran/, field: "veteranStatus", name: "Veteran status" },
 ];
 
-const months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const months = MONTH_NAMES_LOWER;
 // "December 13, 2027" as 2027-12, or with its day as.
 const monthYear = (text: string, withDay = false) => {
   const match = text.toLowerCase().match(/\b(jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+(?:(\d{1,2}),?\s+)?(\d{4})\b/u);

@@ -25,6 +25,7 @@ import {
 } from "docx";
 import { pdfPrintableText } from "./documents";
 import type { Narrative, Profile } from "../shared/model";
+import { MONTH_NAMES } from "../shared/dates";
 
 export type PageSize = [width: number, height: number];
 export const US_LETTER: PageSize = [612, 792];
@@ -48,7 +49,7 @@ export type ResumeModel = {
   sections: Section[];
 };
 
-const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const MONTHS = MONTH_NAMES.map((month) => month.slice(0, 3));
 
 // "2022-01" or "" read "Jan 2022"; a bare year stays a year, and
 // anything else is shown as the applicant wrote it.

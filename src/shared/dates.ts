@@ -5,6 +5,10 @@
 // these known the date is not written: 03/04 is two different days.
 import type { Field, Profile } from "./model";
 
+// The months' names, January first; .toLowerCase() or .slice(0, 3) for the other forms.
+export const MONTH_NAMES: readonly string[] = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+export const MONTH_NAMES_LOWER: readonly string[] = MONTH_NAMES.map((month) => month.toLowerCase());
+
 export type DateFormat = "MM/DD/YYYY" | "DD/MM/YYYY" | "YYYY-MM-DD";
 
 // Today in the applicant's own time zone, "" (not UTC's, which

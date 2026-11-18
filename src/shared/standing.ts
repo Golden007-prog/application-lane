@@ -4,7 +4,7 @@ import globals from "../engine/config/globals.json" with { type: "json" };
 import { countriesNamed, countryCode, type Geography } from "./geography";
 import { askedCountry, citizenOf, jobCountry, usCitizen, usPerson, workAuthorizations } from "./authorization";
 import { parseSalary, salaryAnswer } from "./salary";
-import { localDate, writtenDate } from "./dates";
+import { localDate, writtenDate, MONTH_NAMES } from "./dates";
 import { degreeLevel } from "./education";
 import { ageAnswer } from "./profile-facts";
 
@@ -485,7 +485,7 @@ export function standingAnswer(field: Field, profile: Profile): Answer | undefin
     if (part) {
       if (!/^\s*(immediately|immediate|asap|right away|now)\b/i.test(saved)) return;
       const [year, monthNumber, day] = localDate().split("-");
-      const name = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"][Number(monthNumber) - 1];
+      const name = MONTH_NAMES[Number(monthNumber) - 1];
       if (part === "year") return { value: year };
       if (part === "month") return { value: name, choices: [name.slice(0, 3), monthNumber, String(Number(monthNumber))] };
       return { value: String(Number(day)), choices: [day] };

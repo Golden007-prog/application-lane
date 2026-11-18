@@ -1,3 +1,5 @@
+import { MONTH_NAMES_LOWER } from "./dates";
+import { normalize } from "./model";
 // Answer-bank choices. Stored as a fixed vocabulary (not free text) so one
 // answer can be translated to each portal's own option wording.
 
@@ -92,7 +94,7 @@ export const choiceSynonyms: Record<string, string[]> = {
 
 // How well one option's text answers a proposal. Lower is better; undefined
 // means it does not answer it. Exact wording always beats a rule-based match.
-const months = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const months = MONTH_NAMES_LOWER;
 const seasonRank: Record<string, number> = { spring: 0, summer: 1, fall: 2, autumn: 2 };
 // A month's academic term: the year's index times three plus its season's.
 function termOf(value: string): number | undefined {
@@ -359,16 +361,9 @@ function streetKey(text: string): string {
 }
 
 // As model.ts normalizes (not imported: model.ts reads this file).
-const norm = (value: string) =>
-  value
-    // Punctuation a page without a charset shows as "â€" and a byte or two
-    // ("self‐identify" read as "selfâ€identify") is punctuation still.
-    .replace(/â€[\u0080-\u00bf\u0152\u0153\u0160\u0161\u0178\u017d\u017e\u02c6\u02dc\u2013-\u203a\u20ac\u2122]?/g, " ")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^\p{L}\p{N}\p{M}]+/gu, " ")
-    .trim();
+// The same reading as everywhere else (model.ts), looked up when called:
+// model.ts imports this file, so it is not yet defined while this one loads.
+const norm = (value: string) => normalize(value);
 
 const declines = /\b(decline|prefer not|not disclosed|don t wish|do not wish|dont wish|choose not|not to (say|answer|disclose|identify)|no answer|rather not|self identify|(do not|don t|dont) want to (answer|say|disclose|identify))\b/;
 

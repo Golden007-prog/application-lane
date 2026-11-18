@@ -491,6 +491,21 @@ const plainAnswer = (text: string | undefined): "Yes" | "No" | undefined =>
 // birth: the saved transgender answer, not the gender topic of the
 // demographic rule (Tailspin).
 const genderAtBirth = /\bgender\b.*\b(different|differs?|not the same)\b.*\b(assigned|sex)\b.*\bbirth\b|\b(assigned|sex)\b.*\bbirth\b.*\b(different|differs?)\b.*\bgender\b/;
+
+// What profileAnswer's parts share: the field and profile, and what the
+// first rules read from them.
+type AnswerContext = {
+  field: Field;
+  profile: Profile;
+  label: string;
+  qualified: ReturnType<typeof qualifiedBinaryField>;
+  saved: Profile["answers"];
+  immigration: string;
+  asked: string;
+  educationRow: Profile["education"][number] | undefined;
+};
+// A part of profileAnswer none of whose rules asks the field.
+const NEXT = Symbol("next rule");
 export function profileAnswer(
   field: Field,
   profile: Profile,
@@ -710,6 +725,19 @@ export function profileAnswer(
       ? { value: standing || `${ordinal} Year`, choices: [`${ordinal} Year`, `${year}${["st", "nd", "rd"][year - 1] || "th"} Year`] }
       : { value: standing ? `${ordinal} year (${standing})` : `${ordinal} year` };
   }
+  // The rest, in parts, in the same order.
+  const context: AnswerContext = { field, profile, label, qualified, saved, immigration, asked, educationRow };
+  for (const part of [educationAndPlaceAnswer, studyAndPayAnswer, experienceAndDemographicsAnswer]) {
+    const answer = part(context);
+    if (answer !== NEXT) return answer;
+  }
+  return screeningAnswer(context);
+}
+
+// Part of profileAnswer: Graduation and education status, a project link, locations, countries of citizenship, a school or job's place, and the highest degree.
+// An answer, or undefined to leave the field unanswered; NEXT when none
+// of these rules asks it, for the next part to try.
+function educationAndPlaceAnswer({ field, profile, label, asked, educationRow }: AnswerContext): Answer | undefined | typeof NEXT {
   // "Will you have completed 30 college credit hours at the time of the
   // internship term…?": a finished bachelor's degree is well past any such
   // count. Otherwise left alone.
@@ -984,6 +1012,13 @@ export function profileAnswer(
     const month = months[Number(end[2]) - 1];
     return completion[1] || !month ? { value: `${end[2]}/${end[1]}` } : { value: `${month} ${end[1]}` };
   }
+  return NEXT;
+}
+
+// Part of profileAnswer: Languages, the major or school of one level of study, expected pay, and a GPA and its scale.
+// An answer, or undefined to leave the field unanswered; NEXT when none
+// of these rules asks it, for the next part to try.
+function studyAndPayAnswer({ field, profile, label, saved, asked, educationRow }: AnswerContext): Answer | undefined | typeof NEXT {
   // Inside a row of a Languages section (Workday's): that language's skills
   // take its level, and "I am fluent in this language" says whether it is
   // fluent. an employer names the overall
@@ -1155,6 +1190,13 @@ export function profileAnswer(
     const done = latest ? graduated(latest) : undefined;
     if (done !== undefined) return { value: done ? "Yes" : "No" };
   }
+  return NEXT;
+}
+
+// Part of profileAnswer: When the last degree was earned, where the applicant would move from, years of experience, and demographic answers.
+// An answer, or undefined to leave the field unanswered; NEXT when none
+// of these rules asks it, for the next part to try.
+function experienceAndDemographicsAnswer({ field, profile, label, saved, asked }: AnswerContext): Answer | undefined | typeof NEXT {
   const recent = label.match(/\b(?:did you )?(?:obtain|receive|earn|complete|get)\w* (?:this|that|the|your) degree (?:in|within) the (?:last|past) (\d+) (month|year)s?\b/);
   if (recent) {
     const thisMonth = currentMonth();
@@ -1315,6 +1357,12 @@ export function profileAnswer(
       return choices.length ? { value: "Decline to answer", choices } : undefined;
     return choices.length ? { value: answer, choices } : undefined;
   }
+  return NEXT;
+}
+
+// Part of profileAnswer: The school attended last, government work, a security clearance, screening questions, and how the applicant says their name and the identity answers they saved.
+// An answer, or undefined to leave the field unanswered.
+function screeningAnswer({ field, profile, label, qualified, saved, immigration, asked }: AnswerContext): Answer | undefined {
   // "Which university are you currently attending or did you last attend?":
   // the school question as a sentence. Only the listed school is chosen; one
   // the list lacks is left for the applicant to put under "Other".

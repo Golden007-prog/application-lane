@@ -1,3 +1,4 @@
+import { MONTH_NAMES_LOWER } from "../../shared/dates";
 // Tesla's date boxes (its "tds" design system): a read-only input set only
 // by its calendar, which opens from the button beside it, shows one month
 // under a "November 2026" label between buttons named for the months before
@@ -7,7 +8,7 @@
 // student, please provide your anticipated graduation date?" was left with
 // only its placeholder, today's date.
 
-const monthNames = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+const monthNames = MONTH_NAMES_LOWER;
 
 // The calendar beside a Tesla date box, if it is one.
 export function tdsDateBox(element: Element): HTMLInputElement | undefined {

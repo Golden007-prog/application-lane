@@ -3,7 +3,8 @@
 // 2025"). SmartRecruiters' experience and education dates are drawn this way
 //; what is typed there is read in a format the page never shows,
 // so the month is picked from the calendar as the applicant would.
-const months = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+import { MONTH_NAMES } from "../../shared/dates";
+const months = MONTH_NAMES;
 // Its waits through the content script's own (setMonthPickerWait): a plain
 // timer in a tab out of view runs at most once a minute after a while, and
 // stepping one year back took a minute.

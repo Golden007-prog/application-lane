@@ -398,14 +398,17 @@ const PATCH_LIMIT = 2 * 1024 * 1024;
 // ordinary files under src/ and tests/: nothing else of the repository (its
 // hooks, workflows, scripts or dependencies), no binary file, no link, no
 // file made executable.
+// Under src/ but no report's to change: what finds the applicant's details
+// in a commit (the leak check's terms) and in a shared report.
+const guarded = ["src/server/leak-terms.mjs", "src/server/leak-terms.d.mts", "src/server/clean-report.ts"];
 export function checkPatch(patch: string): string[] {
   if (patch.length > PATCH_LIMIT) throw new Error("The patch is larger than 2 MB.");
   const files = new Set<string>();
-  const allowed = (path: string) => /^(?:src|tests)\/[\w@+.-]+(?:\/[\w@+.-]+)*$/.test(path) && !path.split("/").includes("..");
+  const allowed = (path: string) => /^(?:src|tests)\/[\w@+.-]+(?:\/[\w@+.-]+)*$/.test(path) && !path.split("/").includes("..") && !guarded.includes(path);
   for (const line of patch.split("\n")) {
     const header = line.match(/^diff --git a\/(\S+) b\/(\S+)$/);
     if (header) {
-      for (const path of [header[1], header[2]]) if (!allowed(path)) throw new Error(`The patch changes ${oneLine(path)}, outside src/ and tests/.`);
+      for (const path of [header[1], header[2]]) if (!allowed(path)) throw new Error(`The patch changes ${oneLine(path)}, outside src/ and tests/ or one of the files that find the applicant's details.`);
       files.add(header[2]);
       continue;
     }

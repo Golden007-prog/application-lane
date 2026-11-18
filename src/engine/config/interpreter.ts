@@ -26,6 +26,7 @@ import { nameVariants } from "../../shared/matching";
 import { sameStreet, streetOption } from "../../shared/answers";
 import { profileLanguages } from "../../shared/languages";
 import { degreeAliases } from "../../shared/education";
+import { MONTH_NAMES_LOWER } from "../../shared/dates";
 
 export type FillStatus =
   // caution: the value was written, but the applicant should look at it.
@@ -2417,7 +2418,7 @@ export async function interpretConfig(
           );
           // Oracle's timeline cards give the dates in words: "From March 2026 to
           // No date provided". Read as a tile's "03 2026 present".
-          const monthNumbers = ["january", "february", "march", "april", "may", "june", "july", "august", "september", "october", "november", "december"];
+          const monthNumbers = MONTH_NAMES_LOWER;
           const datesAsNumbers = (text: string) =>
             text
               .replace(/\bfrom\s+(?=[a-z]+\s+\d{4})/gi, "")
