@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping make Application Lane better. Bug reports, site fixes and documentation improvements are all welcome.
+Thanks for helping make Application Lane better. Bug reports, site fixes and documentation improvements are all welcome. Everyone taking part follows the [code of conduct](CODE_OF_CONDUCT.md). For where to make a change, see the [code map](docs/code-map.md).
 
 ## Before you start
 
@@ -29,6 +29,7 @@ Run these before opening a pull request:
 
 ```bash
 npm run check                              # type check
+npm run lint                               # lint: an empty catch says why
 node --import tsx --test tests/*.test.ts   # unit tests
 npm run build                              # extension and backend bundle
 ```
@@ -55,6 +56,7 @@ npx playwright test tests/browser/extension.spec.ts -g "<pattern>"
 - No real résumés, profiles, transcripts, application answers, issue reports, recordings or network captures.
 - Nothing from a data folder (`.local/`, `~/.local/share/application-lane`, and so on), and no tokens or API keys.
 - Test fixtures must use invented applicants and placeholder employers or publicly available form structure only.
+- Fill captures and issue reports stay on the machine that made them. A capture is the page as the fill left it, which is the applicant's own answers (name, contacts, address, work history, written answers, the companies applied to), and its network log adds cookies and everything the page posted. Cleaning a whole page reliably is much harder than cleaning a report, so a fix reaches the public tests as a fixture rebuilt from the page's structure (its markup, ids and question wording) with an invented applicant and a placeholder employer.
 
 ## Pull request checklist
 

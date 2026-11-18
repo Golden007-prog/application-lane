@@ -1,6 +1,6 @@
 # Development
 
-How to build, test and package Application Lane. For how the pieces fit together, see [architecture and limits](architecture.md). For contribution guidelines, see [CONTRIBUTING.md](../CONTRIBUTING.md).
+How to build, test and package Application Lane. For how the pieces fit together, see [architecture and limits](architecture.md); for where to make a change, the [code map](code-map.md). For contribution guidelines, see [CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Layout
 
@@ -27,6 +27,8 @@ npm ci
 ```bash
 npm run check                              # TypeScript type check
 npm test                                   # unit tests (every tests/*.test.ts)
+npm run lint                               # the project's own lint (scripts/lint.mjs)
+npm run coverage                           # unit tests with a coverage table by file
 npm run build                              # build the extension and the backend bundle
 npm run dev                                # backend that restarts when src/ changes
 ```
@@ -90,4 +92,4 @@ Never commit anything from a data folder, `transcripts/`, or real résumés and 
 
 ## Continuous integration
 
-`.github/workflows/ci.yml` runs on every push and pull request: install, type check, unit tests, both builds and packaging. On pull requests and pushes to `main` it also runs a browser smoke job: eight tests that guard what the extension promises (it never submits or presses Next on its own, an edit pauses a fill, and it signs and fills AI answers only as set), capped at 15 minutes. The whole browser suite runs in its own workflow, `.github/workflows/nightly.yml`: every night, and by hand from the Actions tab (`workflow_dispatch`). The actions both workflows use are pinned to commits, not tags, so a moved tag cannot change what runs.
+`.github/workflows/ci.yml` runs on every push and pull request: install, type check, lint, unit tests, both builds and packaging. On pull requests and pushes to `main` it also runs a browser smoke job: eight tests that guard what the extension promises (it never submits or presses Next on its own, an edit pauses a fill, and it signs and fills AI answers only as set), capped at 15 minutes. The whole browser suite runs in its own workflow, `.github/workflows/nightly.yml`: every night, and by hand from the Actions tab (`workflow_dispatch`). Beside it a second job runs the unit tests with coverage of `src/` and keeps the `lcov.info` file as the run's artifact: a report, not a gate. The actions both workflows use are pinned to commits, not tags, so a moved tag cannot change what runs.
